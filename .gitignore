@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+# Generated conversation snapshots and local recovery output may contain
+# prompts, tool output, and absolute paths from this machine.
+claude-graph.html
+recovered-sessions/
+
+# Packaged extension artifacts are reproducible from source.
+*.vsix

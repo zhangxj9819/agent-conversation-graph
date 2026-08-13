@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 主干 -->
+  <path d="M6 4.5 V19.5"/>
+  <!-- 一条分出去又终止的侧枝 -->
+  <path d="M6 9 C6 12, 10 11, 10 14"/>
+  <circle cx="6" cy="4.5" r="1.9" fill="none"/>
+  <circle cx="6" cy="9"   r="1.9" fill="currentColor"/>
+  <circle cx="10" cy="14" r="1.9" fill="none"/>
+  <circle cx="6" cy="19.5" r="1.9" fill="none"/>
+</svg>

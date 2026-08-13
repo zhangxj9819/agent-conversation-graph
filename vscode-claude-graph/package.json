@@ -1,0 +1,136 @@
+{
+  "name": "claude-conversation-graph",
+  "displayName": "Claude 对话分支图",
+  "description": "把 Claude Code 的对话历史渲染成 git-graph 风格的分支图，回退改写一目了然。",
+  "version": "0.2.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "conversation",
+    "graph",
+    "git-graph"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeGraph",
+          "title": "Claude 对话分支图",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeGraph": [
+        {
+          "id": "claudeGraph.sessions",
+          "name": "会话",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "claudeGraph.sessions",
+        "contents": "没有找到 Claude Code 的对话记录。\n记录位于 ~/.claude/projects/，先用 Claude Code 聊几句再回来。\n[重新扫描](command:claudeGraph.refresh)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "claudeGraph.open",
+        "title": "打开分支图",
+        "category": "Claude 分支图",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "claudeGraph.openCurrent",
+        "title": "打开当前工作区最近的会话",
+        "category": "Claude 分支图",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "claudeGraph.refresh",
+        "title": "重新扫描会话",
+        "category": "Claude 分支图",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeGraph.revealFile",
+        "title": "在编辑器中打开 .jsonl 原始记录",
+        "category": "Claude 分支图",
+        "icon": "$(go-to-file)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeGraph.refresh",
+          "when": "view == claudeGraph.sessions",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "claudeGraph.revealFile",
+          "when": "view == claudeGraph.sessions && viewItem == session",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "claudeGraph.revealFile",
+          "when": "false"
+        },
+        {
+          "command": "claudeGraph.open",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claude 对话分支图",
+      "properties": {
+        "claudeGraph.maxChars": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 200,
+          "description": "单条工具输出 / 助手回复的截断长度。工具返回值常常是整个文件，调大会明显增加内存占用。"
+        },
+        "claudeGraph.maxPrompt": {
+          "type": "number",
+          "default": 20000,
+          "minimum": 200,
+          "description": "提问原文的截断长度。"
+        },
+        "claudeGraph.showSystemEvents": {
+          "type": "boolean",
+          "default": false,
+          "description": "默认是否显示斜杠命令、／compact、子任务通知、用户打断等非提问记录。"
+        },
+        "claudeGraph.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "对话记录写入时自动刷新图。关掉后需手动重新扫描。"
+        },
+        "claudeGraph.claudeCommand": {
+          "type": "string",
+          "default": "claude",
+          "description": "创建或切换对话分支时启动的 Claude Code 可执行文件。若扩展宿主的 PATH 找不到 claude，请填写绝对路径。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node test/smoke.js && node test/webview.js"
+  }
+}

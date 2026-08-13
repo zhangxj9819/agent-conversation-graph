@@ -1,0 +1,2 @@
+{"type":"user","uuid":"77777777-7777-4777-8777-777777777777","parentUuid":null,"timestamp":"2026-08-02T10:00:00.000Z","cwd":"/tmp","gitBranch":"main","version":"2.1.231","message":{"content":"检查单线会话"}}
+{"type":"assistant","uuid":"88888888-8888-4888-8888-888888888888","parentUuid":"77777777-7777-4777-8777-777777777777","timestamp":"2026-08-02T10:00:01.000Z","message":{"model":"claude-sonnet","usage":{"output_tokens":8},"content":[{"type":"text","text":"这是单线回复。"}]}}

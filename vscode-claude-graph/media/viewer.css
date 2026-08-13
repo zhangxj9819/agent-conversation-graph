@@ -1,0 +1,176 @@
+/* 界面色一律走 --vscode-* 令牌，跟着用户当前主题走。
+   唯独泳道色不跟 —— VS Code 的 charts.* 没做过色盲校验，这四色是穷举后
+   在明暗两种表面都通过 all-pairs CVD 门槛的唯一一组。
+   色彩只是位置的冗余强化：每条分支同时有固定横坐标和文字 ref 标签。 */
+:root {
+  --lane-1: #3987e5;
+  --lane-2: #c98500;
+  --lane-3: #d55181;
+  --lane-4: #008300;
+  --row-h: 34px;
+}
+body.vscode-light, body.vscode-high-contrast-light {
+  --lane-1: #2a78d6;
+  --lane-2: #eda100;
+  --lane-3: #e87ba4;
+  --lane-4: #008300;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+header {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+  padding: 6px 12px; flex-wrap: wrap;
+  background: var(--vscode-sideBar-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+#hdr-title { font-weight: 600; }
+.stats { display: flex; gap: 11px; opacity: .85; font-size: .92em; }
+.stats b { font-variant-numeric: tabular-nums; }
+.spacer { flex: 1 1 auto; }
+input[type="search"] {
+  width: 190px; padding: 3px 7px;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 3px; font: inherit;
+}
+input[type="search"]:focus {
+  outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px;
+}
+label.chk { display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; opacity: .85; }
+
+main { flex: 1 1 auto; display: flex; min-height: 0; }
+#center { flex: 1 1 auto; overflow: auto; min-width: 0; }
+#detail {
+  flex: 0 0 390px; overflow-y: auto; padding: 12px;
+  background: var(--vscode-sideBar-background);
+  border-left: 1px solid var(--vscode-panel-border);
+}
+
+/* ---- 图 + 行 ---- */
+.graph-wrap {
+  position: relative; display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+.graph-svg { grid-column: 1; grid-row: 1; pointer-events: none; }
+.rows { grid-column: 2; grid-row: 1; position: relative; min-width: 0; }
+.row {
+  height: var(--row-h); display: flex; align-items: center; gap: 9px;
+  padding: 0 12px 0 6px; cursor: pointer;
+}
+.row:hover { background: var(--vscode-list-hoverBackground); }
+.row.on {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.row.dim { opacity: .3; }
+.row .title { flex: 1 1 auto; min-width: 0; overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; }
+.row.kind-command .title, .row.kind-system-event .title,
+.row.kind-compact .title { opacity: .62; font-style: italic; }
+.row .hash, .row .meta, .row .tools {
+  flex: 0 0 auto; font-size: .88em; opacity: .6;
+  font-family: var(--vscode-editor-font-family); font-variant-numeric: tabular-nums;
+}
+.row.on .hash, .row.on .meta, .row.on .tools { opacity: .85; }
+mark {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234,161,0,.45));
+  color: inherit; border-radius: 2px;
+}
+
+.ref {
+  flex: 0 0 auto; font-family: var(--vscode-editor-font-family);
+  font-size: .82em; line-height: 1.5; padding: 0 6px;
+  border-radius: 9px; border: 1px solid currentColor; white-space: nowrap;
+}
+.ref.head { color: var(--lane-1); font-weight: 700; }
+.ref.tip  { opacity: .6; }
+.ref.fork { color: var(--lane-3); }
+
+/* ---- 详情 ---- */
+#detail h2 { font-size: 1em; margin: 0 0 2px; font-weight: 600; }
+#detail .sub {
+  opacity: .6; font-size: .85em; margin-bottom: 10px;
+  font-family: var(--vscode-editor-font-family);
+}
+.kv { display: grid; grid-template-columns: 66px 1fr; gap: 2px 8px; font-size: .88em; margin-bottom: 10px; }
+.kv dt { opacity: .6; }
+.kv dd { margin: 0; word-break: break-all; font-variant-numeric: tabular-nums; }
+.sec {
+  font-size: .85em; opacity: .65; margin: 13px 0 5px;
+  padding-bottom: 3px; border-bottom: 1px solid var(--vscode-panel-border);
+}
+pre.body, details.step pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--vscode-editor-font-family); font-size: .88em; line-height: 1.5;
+}
+pre.body {
+  padding: 8px 10px; max-height: 300px; overflow: auto;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-panel-border); border-radius: 4px;
+}
+details.step {
+  border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 4px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+}
+details.step > summary {
+  cursor: pointer; padding: 4px 8px; display: flex; gap: 6px;
+  align-items: baseline; font-size: .88em; list-style: none;
+}
+details.step > summary::-webkit-details-marker { display: none; }
+details.step > summary::before { content: "▸"; opacity: .5; font-size: .7em; }
+details.step[open] > summary::before { content: "▾"; }
+details.step .s {
+  opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--vscode-editor-font-family);
+}
+details.step pre { padding: 7px 9px; border-top: 1px solid var(--vscode-panel-border); max-height: 250px; overflow: auto; }
+.tag {
+  font-family: var(--vscode-editor-font-family); font-size: .78em;
+  padding: 0 5px; border-radius: 3px; flex: 0 0 auto;
+  background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+}
+.tag.err { background: var(--vscode-inputValidation-errorBackground); color: var(--vscode-errorForeground); }
+.cut { opacity: .55; font-style: italic; }
+
+.turn-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 5px; }
+button.action {
+  width: auto; padding: 5px 10px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
+  border-radius: 3px; cursor: pointer; font: inherit;
+}
+button.action:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+button.action.primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+button.action.primary:hover { background: var(--vscode-button-hoverBackground); }
+.action-note { opacity: .62; font-size: .82em; line-height: 1.45; }
+
+button.sib, button.link {
+  display: block; width: 100%; text-align: left; margin-bottom: 4px; padding: 5px 8px;
+  color: var(--vscode-foreground); background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border); border-radius: 4px;
+  cursor: pointer; font: inherit;
+}
+button.sib:hover, button.link:hover { border-color: var(--vscode-focusBorder); }
+button.sib.self { border-color: var(--vscode-focusBorder); }
+button.sib .h {
+  font-family: var(--vscode-editor-font-family); font-size: .8em; opacity: .6;
+}
+.empty { opacity: .6; padding: 20px 4px; line-height: 1.7; }
+.center-empty { padding: 24px; }

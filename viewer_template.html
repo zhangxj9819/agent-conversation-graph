@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude 对话分支图</title>
+<style>
+/* ---- 主题令牌 ------------------------------------------------------------
+   泳道 4 色经 dataviz 校验器 all-pairs 校验，明暗双模式全部通过。
+   色彩只是位置的冗余强化：每条分支同时有固定横坐标和文字 ref 标签，
+   因此身份从不单靠颜色承载（这也满足浅色模式下两个低对比色的 relief 要求）。 */
+:root {
+  color-scheme: light;
+  --surface-0: #f6f6f4;
+  --surface-1: #fcfcfb;
+  --surface-2: #edece8;
+  --border:    #dedcd6;
+  --border-2:  #c9c7bf;
+  --text-1:    #0b0b0b;
+  --text-2:    #52514e;
+  --text-3:    #8a8880;
+  --lane-1: #2a78d6;
+  --lane-2: #eda100;
+  --lane-3: #e87ba4;
+  --lane-4: #008300;
+  --accent:  #2a78d6;
+  --danger:  #e34948;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --surface-2: #262624;
+    --border:    #34342f;
+    --border-2:  #4a4a43;
+    --text-1:    #ffffff;
+    --text-2:    #c3c2b7;
+    --text-3:    #8d8c82;
+    --lane-1: #3987e5;
+    --lane-2: #c98500;
+    --lane-3: #d55181;
+    --lane-4: #008300;
+    --accent:  #3987e5;
+    --danger:  #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #121211;
+  --surface-1: #1a1a19;
+  --surface-2: #262624;
+  --border:    #34342f;
+  --border-2:  #4a4a43;
+  --text-1:    #ffffff;
+  --text-2:    #c3c2b7;
+  --text-3:    #8d8c82;
+  --lane-1: #3987e5;
+  --lane-2: #c98500;
+  --lane-3: #d55181;
+  --lane-4: #008300;
+  --accent:  #3987e5;
+  --danger:  #e66767;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-1);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- 顶栏 ---- */
+header {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 8px 14px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: .01em; }
+header h1 span { color: var(--text-3); font-weight: 400; }
+.stats { display: flex; gap: 12px; color: var(--text-2); font-size: 12px; }
+.stats b { color: var(--text-1); font-weight: 600; font-variant-numeric: tabular-nums; }
+.spacer { flex: 1 1 auto; }
+.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+input[type="search"] {
+  width: 200px; padding: 4px 8px;
+  background: var(--surface-0); color: var(--text-1);
+  border: 1px solid var(--border-2); border-radius: 5px; font: inherit;
+}
+input[type="search"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+label.chk { display: flex; align-items: center; gap: 4px; color: var(--text-2); cursor: pointer; user-select: none; }
+button.tbtn {
+  padding: 4px 9px; background: var(--surface-0); color: var(--text-2);
+  border: 1px solid var(--border-2); border-radius: 5px; font: inherit; cursor: pointer;
+}
+button.tbtn:hover { background: var(--surface-2); color: var(--text-1); }
+
+/* ---- 三栏 ---- */
+main { flex: 1 1 auto; display: flex; min-height: 0; }
+#sidebar {
+  flex: 0 0 236px; overflow-y: auto;
+  background: var(--surface-1); border-right: 1px solid var(--border);
+}
+#center { flex: 1 1 auto; overflow: auto; min-width: 0; }
+#detail {
+  flex: 0 0 400px; overflow-y: auto;
+  background: var(--surface-1); border-left: 1px solid var(--border);
+  padding: 14px;
+}
+
+/* ---- 侧栏 ---- */
+.proj { padding: 8px 12px 2px; color: var(--text-3); font-size: 11px;
+        text-transform: none; word-break: break-all; border-top: 1px solid var(--border); }
+.proj:first-child { border-top: 0; }
+.sess {
+  padding: 6px 12px; cursor: pointer; border-left: 2px solid transparent;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.sess:hover { background: var(--surface-2); }
+.sess.on { background: var(--surface-2); border-left-color: var(--accent); }
+.sess .t { color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sess .m { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.sess .m .fk { color: var(--lane-3); font-weight: 600; }
+
+/* ---- 图 + 行 ---- */
+.graph-wrap { position: relative; }
+.graph-svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+.rows { position: relative; }
+.row {
+  height: 34px; display: flex; align-items: center; gap: 10px;
+  padding-right: 14px; cursor: pointer; border-bottom: 1px solid transparent;
+}
+.row:hover { background: var(--surface-2); }
+.row.on { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--accent); }
+.row.dim { opacity: .28; }
+.row .title { flex: 1 1 auto; min-width: 0; overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; }
+.row.kind-command .title, .row.kind-system-event .title { color: var(--text-3); font-style: italic; }
+.row.kind-compact .title { color: var(--text-3); }
+.row .hash { font-family: var(--mono); font-size: 11px; color: var(--text-3); flex: 0 0 auto; }
+.row .meta { flex: 0 0 auto; color: var(--text-3); font-size: 11px;
+             font-variant-numeric: tabular-nums; }
+.row .tools { flex: 0 0 auto; color: var(--text-3); font-size: 11px; font-family: var(--mono); }
+mark { background: color-mix(in srgb, var(--lane-2) 45%, transparent); color: inherit; border-radius: 2px; }
+
+.ref {
+  flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; line-height: 1.5;
+  padding: 0 6px; border-radius: 9px; border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.ref.head { color: var(--lane-1); font-weight: 700; }
+.ref.tip  { color: var(--text-3); }
+.ref.fork { color: var(--lane-3); }
+
+/* ---- 详情 ---- */
+#detail h2 { font-size: 13px; margin: 0 0 2px; font-weight: 600; }
+#detail .sub { color: var(--text-3); font-size: 11px; font-family: var(--mono); margin-bottom: 10px; }
+.kv { display: grid; grid-template-columns: 68px 1fr; gap: 2px 8px; font-size: 11.5px; margin-bottom: 12px; }
+.kv dt { color: var(--text-3); }
+.kv dd { margin: 0; color: var(--text-2); word-break: break-all; font-variant-numeric: tabular-nums; }
+.sec { font-size: 11px; color: var(--text-3); margin: 14px 0 5px;
+       padding-bottom: 3px; border-bottom: 1px solid var(--border); }
+pre.body {
+  margin: 0; padding: 9px 10px; background: var(--surface-0);
+  border: 1px solid var(--border); border-radius: 6px;
+  white-space: pre-wrap; word-break: break-word; font-family: var(--mono);
+  font-size: 11.5px; line-height: 1.55; max-height: 320px; overflow: auto;
+}
+details.step { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 5px;
+               background: var(--surface-0); }
+details.step > summary {
+  cursor: pointer; padding: 5px 9px; display: flex; gap: 7px; align-items: baseline;
+  font-size: 11.5px; list-style: none;
+}
+details.step > summary::-webkit-details-marker { display: none; }
+details.step > summary::before { content: "▸"; color: var(--text-3); font-size: 9px; }
+details.step[open] > summary::before { content: "▾"; }
+.tag { font-family: var(--mono); font-size: 10px; padding: 0 5px; border-radius: 3px;
+       background: var(--surface-2); color: var(--text-2); flex: 0 0 auto; }
+.tag.err { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
+details.step .s { color: var(--text-3); overflow: hidden;
+                  text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+details.step pre { margin: 0; padding: 8px 10px; border-top: 1px solid var(--border);
+                   white-space: pre-wrap; word-break: break-word; font-family: var(--mono);
+                   font-size: 11px; line-height: 1.5; max-height: 260px; overflow: auto; }
+.cut { color: var(--text-3); font-style: italic; font-size: 10.5px; }
+
+.sib { display: block; width: 100%; text-align: left; padding: 6px 8px; margin-bottom: 4px;
+       background: var(--surface-0); border: 1px solid var(--border); border-radius: 6px;
+       cursor: pointer; font: inherit; color: var(--text-2); }
+.sib:hover { border-color: var(--accent); color: var(--text-1); }
+.sib.self { border-color: var(--accent); color: var(--text-1); }
+.sib .h { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+.empty { color: var(--text-3); padding: 24px 14px; }
+.legend { display: flex; gap: 10px; align-items: center; color: var(--text-3); font-size: 11px; }
+.legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; vertical-align: -1px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Claude 对话分支图 <span id="hdr-sess"></span></h1>
+  <div class="stats" id="stats"></div>
+  <div class="spacer"></div>
+  <div class="controls">
+    <input type="search" id="q" placeholder="搜索提问内容…" autocomplete="off">
+    <label class="chk"><input type="checkbox" id="f-noise"> 显示命令与系统事件</label>
+    <div class="legend">
+      <span><i style="background:var(--lane-1)"></i> 主干</span>
+      <span><i style="background:var(--lane-3)"></i> 分叉</span>
+    </div>
+    <button class="tbtn" id="theme">◐</button>
+  </div>
+</header>
+
+<main>
+  <nav id="sidebar"></nav>
+  <section id="center"></section>
+  <aside id="detail"></aside>
+</main>
+
+<script>
+const DATA = /*__DATA__*/null;
+
+const ROW_H = 34, LANE_W = 18, PAD_X = 14, NODE_R = 4.5;
+const LANE_VARS = ["var(--lane-1)", "var(--lane-2)", "var(--lane-3)", "var(--lane-4)"];
+
+const state = { session: null, selected: null, showNoise: false, query: "" };
+let view = null;   // 当前布局结果
+
+/** URL 形如 #<会话前8位>/<轮次前7位>，可以把某一轮直接分享出去。 */
+const syncHash = () => history.replaceState(null, "",
+  "#" + (state.session || "").slice(0, 8) +
+  (state.selected ? "/" + state.selected.slice(0, 7) : ""));
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const laneColor = l => LANE_VARS[l % LANE_VARS.length];
+const fmtTime = ts => ts ? ts.slice(0, 16).replace("T", " ") : "";
+
+/* ---------------------------------------------------------------- 树与布局 */
+
+/** 隐藏某些轮次时，把它们的孩子接到最近的可见祖先上，保持分支结构不塌。 */
+/*__LAYOUT__*/
+
+/* ---------------------------------------------------------------- 渲染 */
+
+function renderSidebar() {
+  const el = document.getElementById("sidebar");
+  el.innerHTML = DATA.projects.map(p => `
+    <div class="proj">${esc(p.path)}</div>
+    ${p.sessions.map(s => {
+      const st = sessionStats(s.turns);
+      return `<div class="sess${state.session === s.id ? " on" : ""}" data-sess="${esc(s.id)}">
+        <span class="t">${esc(s.title)}</span>
+        <span class="m">${esc(s.end.slice(0, 10))} · ${st.turns} 轮${
+          st.forks ? ` · <span class="fk">${st.forks} 分叉</span>` : ""}</span>
+      </div>`;
+    }).join("")}
+  `).join("");
+  el.querySelectorAll(".sess").forEach(n =>
+    n.onclick = () => {
+      state.session = n.dataset.sess; state.selected = null;
+      syncHash(); render();
+      document.querySelector(".sess.on")?.scrollIntoView({ block: "nearest" });
+    });
+}
+
+const isVisible = t => state.showNoise || t.kind === "prompt" || t.kind === "compact";
+
+/** 侧栏要显示的轮数/分叉数，必须与图上当前过滤后的视图一致，否则两处数字对不上。 */
+function sessionStats(turns) {
+  const shown = contract(turns, isVisible);
+  const c = new Map();
+  for (const t of shown) if (t.parent) c.set(t.parent, (c.get(t.parent) || 0) + 1);
+  return { turns: shown.length, forks: [...c.values()].filter(v => v > 1).length };
+}
+
+function countForks(turns) { return sessionStats(turns).forks; }
+
+function findSession(id) {
+  for (const p of DATA.projects) for (const s of p.sessions) if (s.id === id) return s;
+  return null;
+}
+
+function renderGraph() {
+  const center = document.getElementById("center");
+  const sess = findSession(state.session);
+  if (!sess) { center.innerHTML = `<div class="empty">左侧选一个会话。</div>`; return; }
+
+  let turns = contract(sess.turns, isVisible);
+  if (!turns.length) {
+    center.innerHTML = `<div class="empty">这个会话没有可显示的轮次，勾选「显示命令与系统事件」试试。</div>`;
+    view = null; return;
+  }
+  view = layout(turns);
+
+  const gw = PAD_X * 2 + view.maxLane * LANE_W;
+  const h = view.order.length * ROW_H;
+  const px = id => PAD_X + view.lane.get(id) * LANE_W;
+  const py = id => view.row.get(id) * ROW_H + ROW_H / 2;
+
+  // 边：跨泳道时在第一段行距内拐进目标泳道，其余全程在自己泳道里垂直下行。
+  // 若改用一条从头拉到尾的长曲线，遇到父子相隔多行就会斜穿过中间的兄弟节点。
+  const edges = [];
+  for (const t of view.turns) {
+    if (!t.parent || !view.row.has(t.parent)) continue;
+    const x1 = px(t.parent), y1 = py(t.parent), x2 = px(t.id), y2 = py(t.id);
+    const color = laneColor(view.lane.get(t.id));
+    let d;
+    if (x1 === x2) {
+      d = `M${x1},${y1} L${x2},${y2}`;
+    } else {
+      const ym = y1 + ROW_H;                    // 拐弯在一行内完成
+      d = `M${x1},${y1} C${x1},${y1 + ROW_H * .55} ${x2},${ym - ROW_H * .55} ${x2},${ym}`
+        + (y2 > ym ? ` L${x2},${y2}` : "");
+    }
+    edges.push(`<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`);
+  }
+
+  const nodes = view.order.map(id => {
+    const c = laneColor(view.lane.get(id));
+    const isFork = view.forks.has(id);
+    return `<circle cx="${px(id)}" cy="${py(id)}" r="${isFork ? NODE_R + 1.5 : NODE_R}"
+      fill="${id === view.head ? c : "var(--surface-0)"}" stroke="${c}" stroke-width="2.5"/>`;
+  }).join("");
+
+  const q = state.query.trim().toLowerCase();
+  const rows = view.order.map(id => {
+    const t = view.byId.get(id);
+    const ref = view.refs.get(id);
+    const hit = !q || (t.title + " " + t.body).toLowerCase().includes(q);
+    const tools = Object.entries(t.toolCounts || {});
+    const nTools = tools.reduce((a, [, v]) => a + v, 0);
+    return `<div class="row kind-${t.kind}${state.selected === id ? " on" : ""}${hit ? "" : " dim"}"
+              data-id="${esc(id)}" style="padding-left:${gw + 6}px">
+      <span class="hash">${esc(t.short)}</span>
+      <span class="title">${highlight(t.title, q)}</span>
+      ${ref ? `<span class="ref ${ref === "HEAD" ? "head" : "tip"}">${esc(ref)}</span>` : ""}
+      ${view.forks.has(id) ? `<span class="ref fork">分出 ${view.kids.get(id).length}</span>` : ""}
+      ${nTools ? `<span class="tools">⚒ ${nTools}</span>` : ""}
+      <span class="meta">${esc(fmtTime(t.ts))}</span>
+    </div>`;
+  }).join("");
+
+  center.innerHTML = `<div class="graph-wrap" style="--gw:${gw}px">
+      <svg class="graph-svg" width="${gw}" height="${h}" aria-hidden="true">${edges.join("")}${nodes}</svg>
+      <div class="rows">${rows}</div>
+    </div>`;
+  center.querySelectorAll(".row").forEach(n =>
+    n.onclick = () => { state.selected = n.dataset.id; syncHash(); render(); });
+
+  document.getElementById("hdr-sess").textContent =
+    `· ${sess.title.slice(0, 46)}`;
+  const nForks = view.forks.size;
+  const nLeaves = [...view.refs.keys()].length;
+  document.getElementById("stats").innerHTML =
+    `<span><b>${view.order.length}</b> 轮</span>
+     <span><b>${nForks}</b> 处分叉</span>
+     <span><b>${nLeaves}</b> 条分支</span>
+     <span><b>${view.maxLane + 1}</b> 泳道</span>`;
+}
+
+function highlight(text, q) {
+  if (!q) return esc(text);
+  const i = text.toLowerCase().indexOf(q);
+  if (i < 0) return esc(text);
+  return esc(text.slice(0, i)) + "<mark>" + esc(text.slice(i, i + q.length)) +
+         "</mark>" + esc(text.slice(i + q.length));
+}
+
+function renderDetail() {
+  const el = document.getElementById("detail");
+  if (!view || !state.selected || !view.byId.has(state.selected)) {
+    el.innerHTML = `<div class="empty">点一行看这一轮的完整内容。<br><br>
+      圆圈较大的节点是分叉点 —— 你在那里回退并改写了提问。</div>`;
+    return;
+  }
+  const t = view.byId.get(state.selected);
+  const parent = t.parent && view.byId.has(t.parent) ? view.byId.get(t.parent) : null;
+  const sibs = parent ? view.kids.get(parent.id) || [] : (view.roots.length > 1 ? view.roots : []);
+
+  const kv = [
+    ["时间", fmtTime(t.ts)],
+    ["父节点", parent ? `${parent.short} ${parent.title.slice(0, 24)}` : "（根）"],
+    ["git 分支", t.gitBranch || "—"],
+    ["模型", (t.models || []).join(", ") || "—"],
+    ["输出", t.outputTokens ? `${t.outputTokens.toLocaleString()} tokens` : "—"],
+    ["子 agent", t.subagents || "—"],
+  ].map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+
+  const steps = (t.steps || []).map(s => {
+    const label = { thinking: "思考", text: "回复", tool: s.name, result: "结果" }[s.type] || s.type;
+    const cls = s.isError ? "tag err" : "tag";
+    const head = s.type === "tool" ? esc(s.summary || "") :
+      esc((s.detail || "").replace(/\s+/g, " ").slice(0, 90));
+    return `<details class="step">
+      <summary><span class="${cls}">${esc(label)}</span><span class="s">${head}</span></summary>
+      <pre>${esc(s.detail)}${s.truncated ? `\n<span class="cut">…已截断</span>` : ""}</pre>
+    </details>`;
+  }).join("") || `<div class="empty" style="padding:8px 0">（这一轮没有助手动作）</div>`;
+
+  el.innerHTML = `
+    <h2>${esc(t.title)}</h2>
+    <div class="sub">${esc(t.short)} · ${esc(t.kind)}${
+      view.refs.has(t.id) ? " · " + esc(view.refs.get(t.id)) : ""}</div>
+    <dl class="kv">${kv}</dl>
+    ${branchList(view.kids.get(t.id) || [], t.id,
+        `从这里分出 ${(view.kids.get(t.id) || []).length} 条 —— 你在这一轮之后回退改写`)}
+    ${branchList(sibs.length > 1 ? sibs : [], t.id,
+        `同父分支 ${sibs.length} 条 —— 与它源自同一次提问`)}
+    <div class="sec">提问原文${t.bodyTruncated ? "（已截断）" : ""}</div>
+    <pre class="body">${esc(t.body || t.title)}</pre>
+    <div class="sec">助手动作 ${(t.steps || []).length} 步</div>
+    ${steps}`;
+
+  el.querySelectorAll("[data-go]").forEach(n =>
+    n.onclick = () => { state.selected = n.dataset.go; syncHash(); render(); });
+}
+
+/** 把一组轮次渲染成可点击的分支列表；少于 2 条时不值得单列一节。 */
+function branchList(ids, selfId, heading) {
+  if (ids.length < 2) return "";
+  return `<div class="sec">${esc(heading)}</div>` + ids.map(id => {
+    const s = view.byId.get(id);
+    return `<button class="sib${id === selfId ? " self" : ""}" data-go="${esc(id)}">
+      <span class="h">${esc(s.short)} ${esc(fmtTime(s.ts))}${
+        view.refs.has(id) ? " · " + esc(view.refs.get(id)) : ""}</span><br>${esc(s.title.slice(0, 110))}
+    </button>`;
+  }).join("");
+}
+
+function render() { renderSidebar(); renderGraph(); renderDetail(); }
+
+/* ---------------------------------------------------------------- 交互 */
+
+document.getElementById("q").oninput = e => { state.query = e.target.value; renderGraph(); };
+document.getElementById("f-noise").onchange = e => {
+  state.showNoise = e.target.checked; state.selected = null; render();
+};
+document.getElementById("theme").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : cur === "light" ? null : "dark";
+  if (next) document.documentElement.setAttribute("data-theme", next);
+  else document.documentElement.removeAttribute("data-theme");
+};
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || !view) return;
+  const i = view.order.indexOf(state.selected);
+  if (e.key === "j" || e.key === "ArrowDown") {
+    state.selected = view.order[Math.min(view.order.length - 1, i + 1)] || view.order[0];
+  } else if (e.key === "k" || e.key === "ArrowUp") {
+    state.selected = view.order[Math.max(0, i - 1)] || view.order[0];
+  } else return;
+  e.preventDefault(); syncHash(); render();
+  document.querySelector(".row.on")?.scrollIntoView({ block: "nearest" });
+});
+
+/* ---------------------------------------------------------------- 启动 */
+
+(function init() {
+  const all = DATA.projects.flatMap(p => p.sessions)
+    .sort((a, b) => (b.end || "").localeCompare(a.end || ""));
+  const [hSess, hTurn] = location.hash.replace(/^#/, "").split("/");
+  // 优先 URL 指定，其次最近一个有分叉的会话 —— 否则图上没东西可看
+  const pick = (hSess && all.find(s => s.id.startsWith(hSess)))
+    || all.find(s => countForks(s.turns) > 0)
+    || all[0];
+  state.session = pick?.id ?? null;
+  if (hTurn && pick) {
+    const t = pick.turns.find(x => x.id.startsWith(hTurn));
+    if (t) { state.selected = t.id; if (t.kind !== "prompt" && t.kind !== "compact") state.showNoise = true; }
+  }
+  document.getElementById("f-noise").checked = state.showNoise;
+  render();
+  document.querySelector(".sess.on")?.scrollIntoView({ block: "center" });
+})();
+</script>
+</body>
+</html>
