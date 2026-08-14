@@ -1,171 +1,80 @@
 # Conversation Graph
 
-把 AI 编程代理的对话历史渲染成 **git-graph 风格的分支图**。Python 单文件导出器支持
-Claude Code；VS Code 插件同时支持 Claude Code 与 OpenAI Codex。
+把 Claude Code 与 OpenAI Codex 的本地对话历史，呈现为清晰的 git-graph 风格分支图。
 
-Claude 对话记录里每条消息都带 `uuid` / `parentUuid`，本身就是一棵树。当你回退到某条历史
-消息重新提问（`Esc Esc` 或编辑历史输入），就会从那个节点分出新的孩子 —— 结构上和
-git 的分叉完全同构。这个工具把它画出来。
+## 项目定位
 
-```
-● 83f961c  帮我评估一下当前的离线配置部分距离审稿人的建议差什么      分出 2
-├─● 6305c19  继续                                                    tip/1
-● 998c399  翻译一下                                                  分出 2
-├─● fa86b53  全部翻译，不要什么协议保留                              tip/2
-● 7f9bdd8  全部翻译，不要有什么引用，参考这个
-● d42b0ea  帮我修改离线配置部分，删除之前的离线配置…                 分出 4
-├─● 7c0ed16  修改后的部分按照红色进行标记                            tip/4
-├─● a9ee109  针对现在的编译问题进行重新加载                          tip/5
-├─● 1aea837  archived_offline_calibration_and_online_K.tex 这是什么   tip/6
-● 4894eef  什么问题 Rc files read: NONE Latexmk…                     HEAD
-```
+Conversation Graph 是一个面向 AI 编程代理的本地对话可视化工具，用来解决三个问题：
 
-两种用法：为 Claude 生成**单文件 HTML**，或者安装
-**Claude / Codex VS Code 插件**（见 [`vscode-claude-graph/`](vscode-claude-graph/README.md)，
-在同一个活动栏容器中提供 Claude 与 Codex 两个独立视图，并跟着各自 CLI 的对话实时刷新、
-创建分支）。
+- 一段对话经过回退、改写和继续后，很难看清真实的分支关系。
+- 同一个对话可能分散在多个 session 或 rollout 文件中，容易在列表里重复出现。
+- 想从某一轮重新尝试时，通常只能继续最新上下文，不能直观地选择历史节点。
 
-## 用法
+项目提供两种使用方式：
 
-```bash
-python3 claude_graph.py --list                    # 列出所有项目与会话
-python3 claude_graph.py --open                    # 当前目录所属项目，生成后打开
-python3 claude_graph.py --project FlowScheuling   # 按名字模糊匹配
-python3 claude_graph.py --session 1fce10c5        # 单个会话
-python3 claude_graph.py --all -o graph.html       # 全部项目
-```
-
-只依赖 Python 3 标准库，输出是单文件 HTML，数据内嵌，可离线打开。HTML 会包含提问、
-回复、工具参数/结果和本地路径，分享给别人前务必检查并脱敏。
-
-`--max-chars`（默认 2000）截断单条工具输出，`--max-prompt`（默认 20000）截断提问原文。
-工具返回值常常是整个文件，不截断会让 HTML 膨胀好几倍。
-
-## 界面
-
-左栏选会话，中间是图，右栏是选中轮次的完整内容。
-
-- **点节点** 看这一轮的提问原文、助手每一步动作（思考 / 回复 / 工具调用 / 返回值）、
-  模型、token 消耗、当时所在的真实 git 分支
-- **分叉点**会列出「从这里分出 N 条」，可以并排对照你把同一个问题改写成了什么样 ——
-  这是这张图最有用的地方
-- `j` / `k` 或方向键上下移动，搜索框过滤提问内容
-- URL 形如 `#1fce10c5/d42b0ea`，可以直接分享到某一轮
-- 右上角 ◐ 在 浅色 / 深色 / 跟随系统 之间切换
-- VS Code 插件只显示当前工作区对应的对话；Claude 以根消息 UUID、Codex 以
-  `forked_from_id` 谱系合并，多个分支只占一个对话标识。Claude 与 Codex 是同一活动栏
-  容器中的两个独立可折叠视图，不会混在同一棵会话树中；两者都可从任意轮次创建分支
-
-默认只显示真实提问；勾选「显示命令与系统事件」可以放出 `/model`、`/compact`、
-子任务通知、用户打断等记录。
-
-### 创建与切换 Claude / Codex 分支（VS Code 插件）
-
-点开一个图节点后，详情面板会提供：
-
-- **从此轮创建分支**：可选填分支名，在新终端复制截至该轮的对话并创建新的 session ID，
-  原会话保持不变。
-- **从 tip/HEAD 继续**：分支尖端节点会显示继续按钮，把该尖端复制为独立 session 后打开。
-
-Claude Code 2.1.231 的 `/branch` / `--fork-session` 只能从当前叶子分支，不能指定图中的
-历史 UUID。扩展会在原会话旁新增一份只含所选祖先链的 JSONL，再恢复这个独立 session；
-原会话不会被修改或删除。这些操作只改变 Claude 对话上下文，**不会切换 Git 分支或回滚
-文件**。如果扩展宿主找不到 `claude`，可在设置中为 `claudeGraph.claudeCommand` 填写绝对路径。
-
-Codex 对话读取 `~/.codex/sessions/**/*.jsonl`，排除子 agent，并把 fork rollout 合并为轮次
-树。创建历史分支时使用 Codex app-server 的稳定
-`thread/fork({ threadId, lastTurnId })` 接口；继续尖端时运行 `codex resume <thread>`。
-插件不手工改写 Codex rollout。如果找不到 `codex`，可设置 `claudeGraph.codexCommand`。
-所有操作同样不会切换 Git 分支或回滚工作区文件。
-
-## 实现要点
-
-### 什么算「一个 commit」
-
-原始 JSONL 的粒度太细：助手的一次回复会被拆成若干条记录（thinking / text / 每个
-tool_use 各一条），并行工具调用还会让它们互为父子。**直接照搬 uuid 树，图上会全是
-并行工具造成的伪分支** —— 实测某个会话 24 个"分叉点"里，真实回退一个都没有。
-
-所以先做聚合：以「真实用户提问」为锚点，一次提问 + 其后的全部助手动作 = 一个 commit。
-判定锚点的条件是 `type: user` 且不含 `tool_result`、非 `isMeta`、非 `isSidechain`、
-正文非空。`/model` 这类斜杠命令、`[Request interrupted by user]` 这类 CLI 合成消息
-会被识别出来另行归类，默认不显示。
-
-聚合后本机 47 个会话共 480 轮、其中 37 处是**真实**分叉。
-
-有一处容易踩：`parentUuid` 链条会穿过 `system`、`attachment`、`file-history-snapshot`
-等记录类型。构图时必须把它们都放进链里，只是不显示；否则链条断裂，一堆轮次会假装
-成根节点。
-
-### 泳道布局
-
-深度优先遍历，每个节点的孩子按「子树最晚时间」升序排列 —— 通往最新一轮的那个孩子
-排最后。主干因此始终继承父节点的泳道笔直向下，被放弃的改写分支先铺在右侧并很快
-终止。行序是拓扑序而非严格时间序，和 `git log --graph --topo-order` 一致。
-
-两条不变量，缺一就会画出穿帮的线：
-
-1. **同一父节点的兄弟侧枝必须各占一条泳道**，且保持占用到全部兄弟铺完。否则后一个
-   兄弟复用前一个的泳道，两条连线重叠在一起分不清谁通向谁。
-2. **泳道复用要求「自父节点那一行起未被占用过」**，光看当前是否空闲不够 —— 连线要从
-   父节点所在行一路垂直下行到子节点，中途若有旧节点占位就会被穿过去。
-
-连线路由同样关键：跨泳道时在**第一段行距内**拐进目标泳道，其余全程在自己泳道里垂直
-下行。若改用一条从头拉到尾的长贝塞尔曲线，遇到父子相隔多行就会斜穿过中间的兄弟节点。
-
-布局跑在前端，所以切换过滤条件时会实时重排（隐藏的轮次由 `contract()` 把孩子接到最近
-的可见祖先上，分支结构不塌）。
-
-### 配色
-
-泳道 4 色经 dataviz 校验器 all-pairs 校验，明暗双模式全部通过：
-
-| 泳道 | 浅色 | 深色 |
+| 方式 | 支持的数据 | 适合场景 |
 |---|---|---|
-| 1 | `#2a78d6` | `#3987e5` |
-| 2 | `#eda100` | `#c98500` |
-| 3 | `#e87ba4` | `#d55181` |
-| 4 | `#008300` | `#008300` |
+| VS Code 扩展 | Claude Code、Codex | 在当前工作区中浏览、搜索并创建或继续对话分支 |
+| Python 导出器 | Claude Code | 生成可离线打开的单文件 HTML 分支图 |
 
-参考调色板的 8 个色相在 all-pairs 下过不了 CVD 门槛（泳道彼此相邻可见，属于 all-pairs
-场景而非 adjacent）。穷举全部子集后，尺寸 5 无解，尺寸 4 只有这一组通过。实测全部
-89 次布局最宽正好 4 条泳道，够用。
+VS Code 扩展在同一个活动栏入口中提供 Claude Code 和 Codex 两个独立视图，只显示当前
+工作区对应的对话。它会把同一谱系的文件合并为一个会话标识，并以“每轮真实提问”为图节点，
+避免工具调用和系统事件产生伪分支。
 
-浅色模式下 `#eda100`（2.11:1）和 `#e87ba4`（2.62:1）低于 3:1，需要 relief —— 本设计里
-每条分支同时有固定横坐标和文字 ref 标签（`HEAD` / `tip/N` / `分出 N`），身份从不单靠
-颜色承载，满足要求。
+对话读取、解析和渲染均在本地完成。只有主动创建或继续分支时，扩展才会启动对应的
+Claude Code 或 Codex CLI；这些操作不会切换 Git 分支，也不会回滚工作区文件。
 
-## 文件
+## 安装
 
-```
-claude_graph.py        .jsonl → 轮次树 → 单文件 HTML（只用标准库）
-viewer_template.html   查看器模板，生成时注入 layout.js 与数据
-layout.js              轮次树 → 泳道布局。纯函数、不碰 DOM
-test_layout.mjs        拿真实数据跑 layout.js 的不变量测试
-vscode-claude-graph/   Claude / Codex VS Code 插件
-```
+### VS Code 扩展
 
-`layout.js` 是**单一来源**：`claude_graph.py` 生成 HTML 时把它注入模板，插件的 webview
-直接加载它（`vscode-claude-graph/media/layout.js` 是同一份，插件测试会校验两者一致）。
-改这里两边同时生效，不要复制副本。
-
-## 验证
+在 [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=adscaboli.claude-conversation-graph)
+安装，或运行：
 
 ```bash
-python3 claude_graph.py --all      # 先生成数据
-node test_layout.mjs               # 布局不变量
-cd vscode-claude-graph && npm test # 插件 44 项检查
+code --install-extension adscaboli.claude-conversation-graph
 ```
 
-布局算法用真实数据做了不变量测试（覆盖两种过滤模式 × 47 个会话）：
+要求：
 
+- VS Code 1.85 或更高版本。
+- 已安装 Claude Code 和/或 Codex CLI，并至少在目标项目中产生过一次对话。
+
+### Python 单文件导出器
+
+```bash
+git clone https://github.com/zhangxj9819/claude-conversation-graph.git
+cd claude-conversation-graph
+python3 claude_graph.py --help
 ```
-布局 89 · 节点 824 · 边 720 · 分叉 73 · 最宽 4 泳道 · 违例 0
+
+导出器只依赖 Python 3 标准库，无需安装第三方包。
+
+## 快速开始
+
+### 在 VS Code 中使用
+
+1. 用 VS Code 打开一个使用过 Claude Code 或 Codex 的项目目录。
+2. 点击活动栏中的“对话分支图”。
+3. 在“Claude Code 会话”或“Codex 会话”中选择一个对话。
+4. 点击图中的节点查看提问、回复、思考、工具调用和工具结果。
+5. 选中历史节点创建新分支，或从 `HEAD` / `tip` 继续已有分支。
+
+如果扩展找不到 CLI，可在 VS Code 设置中填写可执行文件的绝对路径：
+
+```text
+claudeGraph.claudeCommand
+claudeGraph.codexCommand
 ```
 
-检查项：节点数守恒、行号连续唯一、边一律向下、兄弟泳道互不相同、
-**每条边的目标泳道在父行与子行之间无任何其他节点**（"线不穿节点"的真正条件）。
+### 导出 Claude 对话为 HTML
 
-Python 与插件的 JS 解析器已用本机全部会话逐字段比对过（47 会话 / 480 轮 / 2956 步，
-零差异）。注意 Python 的 `s[:n]` 数 Unicode 码点、JS 的 `slice` 数 UTF-16 码元，
-文本里有星平面字符时会错开一位 —— JS 侧的 `cut()` 就是为此存在的。
+```bash
+python3 claude_graph.py --list                  # 列出项目和会话
+python3 claude_graph.py --open                  # 导出当前目录并打开
+python3 claude_graph.py --project my-project    # 按项目名导出
+python3 claude_graph.py --session 1fce10c5      # 按会话 ID 前缀导出
+python3 claude_graph.py --all -o graph.html     # 导出全部项目
+```
+
+生成的 HTML 会内嵌对话内容、工具输出和本地路径。它适合离线查看，但在分享前请先检查并脱敏。

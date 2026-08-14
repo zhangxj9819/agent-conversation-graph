@@ -2,9 +2,23 @@
   "name": "claude-conversation-graph",
   "displayName": "Claude / Codex 对话分支图",
   "description": "把 Claude Code 与 Codex 对话历史渲染成 git-graph 风格的分支图，并从任意轮次创建分支。",
-  "version": "0.3.2",
-  "publisher": "local",
+  "version": "0.3.3",
+  "publisher": "adscaboli",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhangxj9819/claude-conversation-graph.git"
+  },
+  "homepage": "https://github.com/zhangxj9819/claude-conversation-graph#readme",
+  "bugs": {
+    "url": "https://github.com/zhangxj9819/claude-conversation-graph/issues"
+  },
+  "icon": "media/marketplace-icon.png",
+  "galleryBanner": {
+    "color": "#1f2937",
+    "theme": "dark"
+  },
+  "pricing": "Free",
   "engines": {
     "vscode": "^1.85.0"
   },

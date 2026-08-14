@@ -6,7 +6,7 @@ const { spawn } = require("node:child_process");
 const CLIENT_INFO = {
   name: "conversation_graph_vscode",
   title: "Claude / Codex Conversation Graph",
-  version: "0.3.2",
+  version: "0.3.3",
 };
 
 function forkThread(options = {}) {
