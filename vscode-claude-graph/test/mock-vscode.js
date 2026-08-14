@@ -5,6 +5,7 @@
  */
 "use strict";
 
+const fs = require("node:fs");
 const pathMod = require("node:path");
 
 class EventEmitter {
@@ -42,6 +43,10 @@ const calls = {
   terminals: [],
   inputBoxes: [],
   inputBoxResponses: [],
+  warningMessages: [],
+  warningResponses: [],
+  deletedFiles: [],
+  deleteErrors: new Map(),
 };
 
 const config = {
@@ -65,6 +70,17 @@ const vscode = {
 
   workspace: {
     workspaceFolders: [{ uri: Uri.file("/tmp") }],
+    fs: {
+      delete(uri, options) {
+        calls.deletedFiles.push({ file: uri.fsPath, options });
+        const injected = calls.deleteErrors.get(uri.fsPath);
+        if (injected) return Promise.reject(new Error(injected));
+        return fs.promises.rm(uri.fsPath, {
+          recursive: Boolean(options?.recursive),
+          force: false,
+        });
+      },
+    },
     getConfiguration() {
       return { get: (key, def) => (key in config ? config[key] : def) };
     },
@@ -122,7 +138,14 @@ const vscode = {
       const value = calls.inputBoxResponses.length ? calls.inputBoxResponses.shift() : "";
       return Promise.resolve(value);
     },
-    showWarningMessage(m) { calls.executed.push(["warn", m]); },
+    showWarningMessage(m, ...args) {
+      calls.executed.push(["warn", m]);
+      calls.warningMessages.push({ message: m, args });
+      const choices = args.filter(arg => typeof arg === "string");
+      if (!choices.length) return Promise.resolve(undefined);
+      const value = calls.warningResponses.length ? calls.warningResponses.shift() : undefined;
+      return Promise.resolve(value);
+    },
     showInformationMessage(m) { calls.executed.push(["info", m]); },
     showErrorMessage(m) { calls.executed.push(["error", m]); },
     showTextDocument(uri) { calls.executed.push(["open", uri.fsPath]); },

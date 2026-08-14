@@ -3,6 +3,14 @@
 All notable changes to the Claude / Codex Conversation Graph extension are
 documented in this file.
 
+## 0.4.0 - 2026-08-14
+
+- Add a confirmed delete action to both Claude Code and Codex conversation trees.
+- Move every session in the selected conversation lineage to the system trash instead of
+  permanently unlinking files.
+- Include hidden Codex subagent rollouts while keeping other conversations and workspaces intact.
+- Close deleted graph panels, refresh both trees immediately, and report partial failures.
+
 ## 0.3.3 - 2026-08-14
 
 - Prepare the extension for its first Visual Studio Marketplace release under
@@ -27,5 +35,6 @@ documented in this file.
 - Keep one conversation entry per session lineage and preserve branch tips.
 - Limit the sidebar to the current VS Code workspace.
 
-[0.3.3]: https://github.com/zhangxj9819/claude-conversation-graph/compare/499e6b0...HEAD
+[0.4.0]: https://github.com/zhangxj9819/claude-conversation-graph/compare/375251a...HEAD
+[0.3.3]: https://github.com/zhangxj9819/claude-conversation-graph/compare/499e6b0...375251a
 [0.3.2]: https://github.com/zhangxj9819/claude-conversation-graph/compare/7ad1687...499e6b0

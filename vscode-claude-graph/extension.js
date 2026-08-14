@@ -25,6 +25,7 @@ const {
 } = require("./src/codex-parser");
 const { createBranchSession } = require("./src/session-branch");
 const { forkThread: forkCodexThread } = require("./src/codex-app-server");
+const { collectConversationFiles } = require("./src/conversation-delete");
 
 /** 合并解析结果按全部成员文件的 mtime + size 缓存，避免重复读大文件。 */
 const cache = new Map();
@@ -482,6 +483,102 @@ function openGraph(context, conversationId) {
   postConversation(conversation);
 }
 
+function deleteTargets(conversation) {
+  return collectConversationFiles(conversation, {
+    claudeRoot: CLAUDE_PROJECTS_DIR,
+    codexRoot: CODEX_SESSIONS_DIR,
+    codexSessions: conversation.provider === "codex"
+      ? listCodexSessionFiles(CODEX_SESSIONS_DIR, CODEX_SESSION_INDEX) : [],
+  });
+}
+
+/** 把侧栏中的整个对话谱系移到系统废纸篓，不接受 TreeItem 携带的原始路径。 */
+async function deleteConversation(item) {
+  const key = item?._conversation?.key;
+  let conversation = findConversation(key);
+  if (!conversation) {
+    vscode.window.showWarningMessage("该对话已经不存在，或不属于当前工作区。");
+    return;
+  }
+
+  const data = loadConversation(conversation);
+  let initialTargets;
+  try {
+    initialTargets = deleteTargets(conversation);
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `无法安全删除对话：${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+  if (!initialTargets.length) {
+    refreshAllTreesAndPanel();
+    vscode.window.showInformationMessage("对话文件已经不存在，列表已刷新。");
+    return;
+  }
+
+  const providerLabel = conversation.provider === "codex" ? "Codex" : "Claude Code";
+  const title = data?.title || conversation.id.slice(0, 8);
+  const action = "移到废纸篓";
+  const selected = await vscode.window.showWarningMessage(
+    `删除 ${providerLabel} 对话“${title}”？`,
+    {
+      modal: true,
+      detail: `将把该对话谱系的 ${initialTargets.length} 个 JSONL 文件移到系统废纸篓。` +
+        "它会从插件会话列表中消失，但仍可从废纸篓恢复。",
+    },
+    action,
+  );
+  if (selected !== action) return;
+
+  // 用户确认期间可能产生新分支；执行前重扫一次，把新成员也纳入同一删除操作。
+  const tree = sessionTrees.find(candidate => candidate.provider === conversation.provider);
+  tree?.refresh();
+  conversation = tree?.getConversation(key) || null;
+  if (!conversation) {
+    refreshAllTreesAndPanel();
+    vscode.window.showInformationMessage("对话文件已经不存在，列表已刷新。");
+    return;
+  }
+
+  let targets;
+  try {
+    targets = deleteTargets(conversation);
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `无法安全删除对话：${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const deleted = [];
+  const failed = [];
+  for (const file of targets) {
+    if (!fs.existsSync(file)) continue;
+    try {
+      await vscode.workspace.fs.delete(vscode.Uri.file(file), {
+        recursive: false,
+        useTrash: true,
+      });
+      deleted.push(file);
+    } catch (err) {
+      failed.push({ file, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  cache.delete(key);
+  if (deleted.length && currentConversationKey === key) disposeGraphPanel();
+  refreshAllTreesAndPanel();
+
+  if (failed.length) {
+    const detail = failed.slice(0, 3)
+      .map(({ file, error }) => `${path.basename(file)}：${error}`).join("；");
+    vscode.window.showErrorMessage(
+      `对话仅删除 ${deleted.length}/${targets.length} 个文件，${failed.length} 个失败。${detail}`);
+  } else {
+    vscode.window.showInformationMessage(
+      `已将 ${providerLabel} 对话“${title}”的 ${deleted.length} 个文件移到废纸篓。`);
+  }
+}
+
 /** 重扫当前工作区，并确保已打开的图没有越过工作区边界或指向已删除文件。 */
 function refreshTreeAndPanel(tree, changedFile = null) {
   tree.refresh();
@@ -556,6 +653,9 @@ function activate(context) {
       const conversation = findConversation(item?._conversation?.key);
       if (conversation) vscode.window.showTextDocument(vscode.Uri.file(conversation.file));
     }),
+
+    vscode.commands.registerCommand("claudeGraph.deleteConversation", item =>
+      deleteConversation(item)),
   );
 
   // 对话写入时自动刷新。两个记录目录都在工作区之外，所以用绝对 RelativePattern。

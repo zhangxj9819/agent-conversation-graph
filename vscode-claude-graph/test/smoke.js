@@ -65,8 +65,9 @@ ext.activate(context);
 
 check("activate 注册了 Claude/Codex 各自的命令", () => {
   assert.deepStrictEqual([...calls.registeredCommands.keys()].sort(), [
-    "claudeGraph.open", "claudeGraph.openCurrent", "claudeGraph.refresh",
-    "claudeGraph.revealFile", "codexGraph.openCurrent", "codexGraph.refresh",
+    "claudeGraph.deleteConversation", "claudeGraph.open", "claudeGraph.openCurrent",
+    "claudeGraph.refresh", "claudeGraph.revealFile", "codexGraph.openCurrent",
+    "codexGraph.refresh",
   ]);
 });
 
@@ -82,6 +83,19 @@ check("一个活动栏容器内注册 Claude/Codex 两个独立 View", () => {
     "Codex 被错误注册成第二个活动栏容器");
   assert.ok(calls.treeProviders.has("claudeGraph.sessions"));
   assert.ok(calls.treeProviders.has("codexGraph.sessions"));
+});
+
+check("Claude/Codex 会话条目都提供删除入口", () => {
+  const manifest = require("../package.json");
+  const command = manifest.contributes.commands
+    .find(item => item.command === "claudeGraph.deleteConversation");
+  assert.ok(command, "清单没有声明删除命令");
+  assert.strictEqual(command.icon, "$(trash)");
+  const menus = manifest.contributes.menus["view/item/context"]
+    .filter(item => item.command === "claudeGraph.deleteConversation");
+  assert.strictEqual(menus.length, 2);
+  assert.ok(menus.some(item => item.when.includes("claudeGraph.sessions")));
+  assert.ok(menus.some(item => item.when.includes("codexGraph.sessions")));
 });
 
 check("同时监听 Claude 与 Codex 的 .jsonl", () => {
@@ -419,6 +433,87 @@ setTimeout(async () => {
   });
   check("切换工作区后关闭旧目录的图面板", () =>
     assert.strictEqual(activePanel.disposed, true));
+
+  // ---- 删除整个对话谱系 ---------------------------------------------------
+  vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file("/tmp") }];
+  calls.onWorkspaceFolders({});
+  const deleteCommand = calls.registeredCommands.get("claudeGraph.deleteConversation");
+  const currentClaudeProject = tree.getChildren()[0];
+  const currentCodexProject = codexTree.getChildren()[0];
+  const claudeDeleteItem = tree.getChildren(currentClaudeProject)
+    .find(item => item._conversation.id === data.id);
+  const codexDeleteItem = codexTree.getChildren(currentCodexProject)[0];
+  const claudeDeleteFiles = claudeDeleteItem._conversation.sessions
+    .map(session => session.file).sort();
+
+  const attemptsBeforeCancel = calls.deletedFiles.length;
+  calls.warningResponses.push(undefined);
+  await deleteCommand(claudeDeleteItem);
+  check("取消删除不会移动任何会话文件", () => {
+    assert.strictEqual(calls.deletedFiles.length, attemptsBeforeCancel);
+    assert.ok(claudeDeleteFiles.every(file => fs.existsSync(file)));
+    const prompt = calls.warningMessages.at(-1);
+    assert.strictEqual(prompt.args[0].modal, true);
+    assert.strictEqual(prompt.args[1], "移到废纸篓");
+    assert.ok(prompt.args[0].detail.includes(`${claudeDeleteFiles.length} 个 JSONL 文件`));
+  });
+
+  const attemptsBeforeClaude = calls.deletedFiles.length;
+  calls.warningResponses.push("移到废纸篓");
+  await deleteCommand(claudeDeleteItem);
+  check("删除 Claude 对话会移动合并谱系的全部 session", () => {
+    const attempts = calls.deletedFiles.slice(attemptsBeforeClaude);
+    assert.deepStrictEqual(attempts.map(item => item.file).sort(), claudeDeleteFiles);
+    assert.ok(attempts.every(item => item.options.useTrash === true &&
+      item.options.recursive === false));
+    assert.ok(claudeDeleteFiles.every(file => !fs.existsSync(file)));
+    assert.ok(fs.existsSync(outsideFile), "误删了其他工作区的 Claude 会话");
+    const remainingProject = tree.getChildren()[0];
+    assert.strictEqual(tree.getChildren(remainingProject).length, 1);
+  });
+
+  const remainingClaudeProject = tree.getChildren()[0];
+  const remainingClaudeItem = tree.getChildren(remainingClaudeProject)[0];
+  const undeletableFile = remainingClaudeItem._conversation.file;
+  calls.deleteErrors.set(undeletableFile, "模拟的废纸篓权限错误");
+  calls.warningResponses.push("移到废纸篓");
+  await deleteCommand(remainingClaudeItem);
+  calls.deleteErrors.delete(undeletableFile);
+  check("废纸篓操作失败时保留文件并明确报告", () => {
+    assert.ok(fs.existsSync(undeletableFile), "失败后错误地永久删除了文件");
+    assert.ok(calls.executed.some(entry => entry[0] === "error" &&
+      entry[1].includes("0/1") && entry[1].includes("模拟的废纸篓权限错误")));
+    assert.strictEqual(tree.getChildren(tree.getChildren()[0]).length, 1);
+  });
+
+  const codexVisibleFiles = codexDeleteItem._conversation.sessions
+    .map(session => session.file);
+  const codexSubagent = path.join(testConfigDir,
+    "codex/sessions/2026/08/14/rollout-subagent-88888888-8888-7888-8888-888888888888.jsonl");
+  const codexOther = path.join(testConfigDir,
+    "codex/sessions/2026/08/14/rollout-other-77777777-7777-7777-8777-777777777777.jsonl");
+  calls.registeredCommands.get("claudeGraph.open")(codexDeleteItem.command.arguments[0]);
+  const deletePanel = calls.panels.at(-1);
+  const attemptsBeforeCodex = calls.deletedFiles.length;
+  calls.warningResponses.push("移到废纸篓");
+  await deleteCommand(codexDeleteItem);
+  check("删除 Codex 对话会包含 fork 和隐藏的子 agent rollout", () => {
+    const attempts = calls.deletedFiles.slice(attemptsBeforeCodex);
+    const expected = [...codexVisibleFiles, codexSubagent].sort();
+    assert.deepStrictEqual(attempts.map(item => item.file).sort(), expected);
+    assert.ok(expected.every(file => !fs.existsSync(file)));
+    assert.ok(fs.existsSync(codexOther), "误删了其他工作区的 Codex 会话");
+    assert.strictEqual(codexTree.getChildren().length, 0);
+    assert.strictEqual(deletePanel.disposed, true, "删除后仍显示已不存在的对话图");
+  });
+
+  const attemptsBeforeForged = calls.deletedFiles.length;
+  await deleteCommand({ _conversation: { key: "forged-outside-workspace" } });
+  check("拒绝删除不属于当前工作区的伪造条目", () => {
+    assert.strictEqual(calls.deletedFiles.length, attemptsBeforeForged);
+    assert.ok(calls.executed.some(entry => entry[0] === "warn" &&
+      entry[1].includes("不属于当前工作区")));
+  });
 
   ext.deactivate();
   Module._load = origLoad;

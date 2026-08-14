@@ -1,8 +1,8 @@
 {
   "name": "claude-conversation-graph",
   "displayName": "Claude / Codex 对话分支图",
-  "description": "把 Claude Code 与 Codex 对话历史渲染成 git-graph 风格的分支图，并从任意轮次创建分支。",
-  "version": "0.3.3",
+  "description": "把 Claude Code 与 Codex 对话历史渲染成 git-graph 风格的分支图，支持创建分支和安全删除整个对话。",
+  "version": "0.4.0",
   "publisher": "adscaboli",
   "license": "MIT",
   "repository": {
@@ -106,6 +106,12 @@
         "title": "在编辑器中打开 .jsonl 原始记录",
         "category": "对话分支图",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "claudeGraph.deleteConversation",
+        "title": "删除整个对话…",
+        "category": "对话分支图",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -125,12 +131,22 @@
         {
           "command": "claudeGraph.revealFile",
           "when": "view == claudeGraph.sessions && viewItem == session",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "claudeGraph.deleteConversation",
+          "when": "view == claudeGraph.sessions && viewItem == session",
+          "group": "inline@2"
         },
         {
           "command": "claudeGraph.revealFile",
           "when": "view == codexGraph.sessions && viewItem == session",
-          "group": "inline"
+          "group": "inline@1"
+        },
+        {
+          "command": "claudeGraph.deleteConversation",
+          "when": "view == codexGraph.sessions && viewItem == session",
+          "group": "inline@2"
         }
       ],
       "commandPalette": [
@@ -140,6 +156,10 @@
         },
         {
           "command": "claudeGraph.open",
+          "when": "false"
+        },
+        {
+          "command": "claudeGraph.deleteConversation",
           "when": "false"
         }
       ]
@@ -183,6 +203,6 @@
     }
   },
   "scripts": {
-    "test": "node test/codex-app-server.js && node test/smoke.js && node test/webview.js"
+    "test": "node test/conversation-delete.js && node test/codex-app-server.js && node test/smoke.js && node test/webview.js"
   }
 }
