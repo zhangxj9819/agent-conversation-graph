@@ -289,13 +289,20 @@ def build_turns(records: list[dict], max_chars: int, max_prompt: int) -> dict:
 
 
 def session_meta(path: Path, records: list[dict], turns: list[dict]) -> dict:
-    title = ""
+    custom_title = ""
+    ai_title = ""
+    agent_name = ""
     cwd = ""
     for rec in records:
-        if rec.get("type") == "ai-title" and rec.get("slug"):
-            title = rec["slug"]
+        if rec.get("type") == "custom-title" and rec.get("customTitle"):
+            custom_title = rec["customTitle"]
+        if rec.get("type") == "ai-title" and (rec.get("aiTitle") or rec.get("slug")):
+            ai_title = rec.get("aiTitle") or rec["slug"]
+        if rec.get("type") == "agent-name" and rec.get("agentName"):
+            agent_name = rec["agentName"]
         if not cwd and rec.get("cwd"):
             cwd = rec["cwd"]
+    title = custom_title or agent_name or ai_title
     if not title and turns:
         first = next((t for t in turns if t["kind"] == "prompt"), turns[0])
         title = first["title"][:60]

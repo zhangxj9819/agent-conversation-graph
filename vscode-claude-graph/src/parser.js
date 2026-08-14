@@ -13,6 +13,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { StringDecoder } = require("node:string_decoder");
 
 const CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 const PROJECTS_DIR = path.join(CONFIG_DIR, "projects");
@@ -277,12 +278,19 @@ function buildTurns(records, maxChars, maxPrompt) {
 }
 
 function sessionMeta(file, records, turns) {
-  let title = "";
+  let customTitle = "";
+  let aiTitle = "";
+  let agentName = "";
   let cwd = "";
   for (const rec of records) {
-    if (rec.type === "ai-title" && rec.slug) title = rec.slug;
+    if (rec.type === "custom-title" && rec.customTitle) customTitle = rec.customTitle;
+    if (rec.type === "ai-title" && (rec.aiTitle || rec.slug)) {
+      aiTitle = rec.aiTitle || rec.slug;
+    }
+    if (rec.type === "agent-name" && rec.agentName) agentName = rec.agentName;
     if (!cwd && rec.cwd) cwd = rec.cwd;
   }
+  let title = customTitle || agentName || aiTitle;
   if (!title && turns.length) {
     title = cut((turns.find(t => t.kind === "prompt") || turns[0]).title, 60);
   }
@@ -309,6 +317,128 @@ function parseSession(file, opts = {}) {
     opts.maxPrompt ?? DEFAULT_MAX_PROMPT);
   if (!turns.length) return null;
   const meta = sessionMeta(file, records, turns);
+  meta.turns = turns;
+  return meta;
+}
+
+/**
+ * 读取 JSONL 中第一条主链消息的 UUID。同一次 /branch 或 --fork-session 会把祖先消息
+ * 原样复制到新文件，所以这个 UUID 是跨 session 稳定的「对话谱系 ID」。逐块扫描只读
+ * 到第一条消息为止，避免侧栏刷新时完整解析每个大文件。
+ */
+function firstMainUuid(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, "r");
+    const decoder = new StringDecoder("utf8");
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    let pending = "";
+
+    const inspect = line => {
+      if (!line.trim()) return null;
+      try {
+        const rec = JSON.parse(line);
+        return typeof rec.uuid === "string" && !rec.isSidechain ? rec.uuid : null;
+      } catch {
+        return null;
+      }
+    };
+
+    while (true) {
+      const count = fs.readSync(fd, chunk, 0, chunk.length, null);
+      if (!count) break;
+      pending += decoder.write(chunk.subarray(0, count));
+      let newline;
+      while ((newline = pending.indexOf("\n")) !== -1) {
+        const id = inspect(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+        if (id) return id;
+      }
+    }
+    pending += decoder.end();
+    return inspect(pending);
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* 已关闭或文件在扫描时消失 */ }
+    }
+  }
+}
+
+/** 把共享第一条消息 UUID 的多个 session 文件归为一个对话标识。 */
+function groupSessionFiles(sessions) {
+  const byRoot = new Map();
+  for (const session of sessions) {
+    const id = session.rootId || session.id;
+    let group = byRoot.get(id);
+    if (!group) {
+      group = { id, rootId: id, sessions: [], mtimeMs: 0, size: 0 };
+      byRoot.set(id, group);
+    }
+    group.sessions.push(session);
+    group.mtimeMs = Math.max(group.mtimeMs, session.mtimeMs || 0);
+    group.size += session.size || 0;
+  }
+  const groups = [...byRoot.values()];
+  for (const group of groups) {
+    group.sessions.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    group.file = group.sessions[0].file;
+  }
+  groups.sort((a, b) => b.mtimeMs - a.mtimeMs || a.id.localeCompare(b.id));
+  return groups;
+}
+
+/**
+ * 合并同一谱系的多个 JSONL。共享祖先 UUID 只保留一份，独有节点全部保留；每个轮次
+ * 同时记录一个确实包含该消息的 sourceFile，供扩展从合并图精确创建后续分支。
+ */
+function parseConversation(sessionFiles, opts = {}) {
+  const sessions = sessionFiles.map(entry => {
+    if (typeof entry !== "string") return entry;
+    const st = fs.statSync(entry);
+    return {
+      id: path.basename(entry, ".jsonl"), file: entry,
+      rootId: firstMainUuid(entry), mtimeMs: st.mtimeMs, size: st.size,
+    };
+  }).filter(Boolean).sort((a, b) => b.mtimeMs - a.mtimeMs);
+  if (!sessions.length) return null;
+
+  const recordsByFile = new Map();
+  const byUuid = new Map();
+  const sourceByUuid = new Map();
+  for (const session of sessions) {
+    const records = readJsonl(session.file);
+    recordsByFile.set(session.file, records);
+    for (const rec of records) {
+      if (typeof rec.uuid !== "string") continue;
+      // sessions 按最近修改优先；较新的分支通常是创建下一分支时最完整的来源。
+      if (!byUuid.has(rec.uuid)) byUuid.set(rec.uuid, rec);
+      if (!sourceByUuid.has(rec.uuid)) sourceByUuid.set(rec.uuid, session.file);
+    }
+  }
+  if (!byUuid.size) return null;
+
+  const mergedRecords = [...byUuid.values()];
+  const turns = buildTurns(mergedRecords,
+    opts.maxChars ?? DEFAULT_MAX_CHARS,
+    opts.maxPrompt ?? DEFAULT_MAX_PROMPT);
+  if (!turns.length) return null;
+  for (const turn of turns) {
+    turn.sourceFile = sourceByUuid.get(turn.resumeAt) || sourceByUuid.get(turn.id) || "";
+  }
+
+  // 最早修改的文件通常是未分支的原会话，用它的命名元数据作为整棵树的标题。
+  const canonical = sessions.slice().sort((a, b) => a.mtimeMs - b.mtimeMs)[0];
+  const canonicalMetadata = (recordsByFile.get(canonical.file) || [])
+    .filter(rec => typeof rec.uuid !== "string");
+  const meta = sessionMeta(canonical.file,
+    [...canonicalMetadata, ...mergedRecords], turns);
+  meta.id = sessions[0].rootId || firstMainUuid(sessions[0].file) || meta.id;
+  meta.short = meta.id.slice(0, 8);
+  meta.file = canonical.file;
+  meta.files = sessions.map(session => session.file);
+  meta.sessionCount = sessions.length;
   meta.turns = turns;
   return meta;
 }
@@ -341,7 +471,11 @@ function listSessionFiles(projectsDir = PROJECTS_DIR) {
         continue;
       }
       if (!st.size) continue;
-      sessions.push({ id: path.basename(f, ".jsonl"), file: full, mtimeMs: st.mtimeMs, size: st.size });
+      const id = path.basename(f, ".jsonl");
+      sessions.push({
+        id, file: full, mtimeMs: st.mtimeMs, size: st.size,
+        rootId: firstMainUuid(full) || id,
+      });
     }
     if (sessions.length) {
       sessions.sort((a, b) => b.mtimeMs - a.mtimeMs);
@@ -355,6 +489,9 @@ function listSessionFiles(projectsDir = PROJECTS_DIR) {
 module.exports = {
   PROJECTS_DIR,
   parseSession,
+  parseConversation,
+  firstMainUuid,
+  groupSessionFiles,
   listSessionFiles,
   readJsonl,
   buildTurns,

@@ -49,7 +49,7 @@ if (!forked.length) {
   console.log("  ⊘ 本机没有含分叉的会话，跳过");
   process.exit(0);
 }
-calls.registeredCommands.get("claudeGraph.open")(forked[0].resourceUri.fsPath);
+calls.registeredCommands.get("claudeGraph.open")(forked[0].command.arguments[0]);
 const payload = calls.messages.at(-1);
 
 // 挑一个分叉点，预置成「上次看到这里」的状态

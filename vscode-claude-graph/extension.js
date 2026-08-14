@@ -12,27 +12,30 @@ const vscode = require("vscode");
 const path = require("node:path");
 const fs = require("node:fs");
 
-const { PROJECTS_DIR, parseSession, listSessionFiles } = require("./src/parser");
+const {
+  PROJECTS_DIR, parseConversation, groupSessionFiles, listSessionFiles,
+} = require("./src/parser");
+const { createBranchSession } = require("./src/session-branch");
 
-/** 解析结果按 mtime + size 缓存，避免重复读大文件。 */
+/** 合并解析结果按全部成员文件的 mtime + size 缓存，避免重复读大文件。 */
 const cache = new Map();
 
-function loadSession(file) {
-  let st;
-  try {
-    st = fs.statSync(file);
-  } catch {
-    return null;
-  }
-  const hit = cache.get(file);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.data;
+function loadConversation(conversation) {
+  if (!conversation?.sessions?.length) return null;
+  const signature = conversation.sessions
+    .map(session => `${session.file}:${session.mtimeMs}:${session.size}`)
+    .sort()
+    .join("|");
+  const cacheKey = conversation.key || conversation.id;
+  const hit = cache.get(cacheKey);
+  if (hit && hit.signature === signature) return hit.data;
 
   const cfg = vscode.workspace.getConfiguration("claudeGraph");
-  const data = parseSession(file, {
+  const data = parseConversation(conversation.sessions, {
     maxChars: cfg.get("maxChars", 2000),
     maxPrompt: cfg.get("maxPrompt", 20000),
   });
-  cache.set(file, { mtimeMs: st.mtimeMs, size: st.size, data });
+  cache.set(cacheKey, { signature, data });
   return data;
 }
 
@@ -60,28 +63,59 @@ class SessionTree {
   constructor() {
     this._onDidChange = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChange.event;
+    this.workspacePath = null;
     this.projects = [];
   }
 
   refresh() {
-    this.projects = listSessionFiles(PROJECTS_DIR);
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    this.workspacePath = folder?.uri?.fsPath ? path.resolve(folder.uri.fsPath) : null;
+    if (!this.workspacePath) {
+      this.projects = [];
+    } else {
+      // Claude Code 用 cwd 中的 / 替换成 - 作为项目记录目录名。只保留当前
+      // VS Code 工作区对应的目录，避免在侧栏泄露或误操作其他项目的会话。
+      const encoded = this.workspacePath.replace(/\//g, "-");
+      this.projects = listSessionFiles(PROJECTS_DIR)
+        .filter(project => project.dir === encoded)
+        .map(project => {
+          const conversations = groupSessionFiles(project.sessions)
+            .map(conversation => ({
+              ...conversation,
+              // 根 UUID 在不同项目理论上也可能相同；内部键必须带项目边界。
+              key: JSON.stringify([project.path, conversation.id]),
+            }));
+          return { ...project, workspacePath: this.workspacePath, conversations };
+        });
+    }
     vscode.commands.executeCommand("setContext", "claudeGraph.hasSessions",
       this.projects.length > 0);
     this._onDidChange.fire();
+  }
+
+  getConversation(key) {
+    if (typeof key !== "string") return null;
+    for (const project of this.projects) {
+      const conversation = project.conversations.find(item => item.key === key);
+      if (conversation) return conversation;
+    }
+    return null;
+  }
+
+  latestConversation() {
+    return this.projects[0]?.conversations[0] || null;
   }
 
   getTreeItem(el) { return el; }
 
   getChildren(el) {
     if (!el) {
-      // 顶层：项目。目录名是把路径里的 / 换成 - 得来的，不可逆，
-      // 所以先解析首个会话拿真实 cwd 当标题。
+      // 顶层只会有当前工作区这个项目。
       return this.projects.map(p => {
-        const first = loadSession(p.sessions[0].file);
-        const label = first && first.cwd ? path.basename(first.cwd) : p.dir;
+        const label = path.basename(p.workspacePath);
         const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Collapsed);
-        item.description = `${p.sessions.length} 个会话`;
-        item.tooltip = (first && first.cwd) || p.path;
+        item.description = `${p.conversations.length} 个对话`;
+        item.tooltip = p.workspacePath;
         item.iconPath = new vscode.ThemeIcon("folder");
         item.contextValue = "project";
         item._project = p;
@@ -94,25 +128,28 @@ class SessionTree {
     const showNoise = vscode.workspace.getConfiguration("claudeGraph")
       .get("showSystemEvents", false);
 
-    return el._project.sessions.map(s => {
-      const data = loadSession(s.file);
+    return el._project.conversations.map(conversation => {
+      const data = loadConversation(conversation);
       if (!data) return null;
       const st = statsOf(data.turns, showNoise);
       const item = new vscode.TreeItem(data.title, vscode.TreeItemCollapsibleState.None);
-      item.description = `${st.turns} 轮${st.forks ? ` · ${st.forks} 分叉` : ""}`;
+      item.description = `${st.turns} 轮${st.forks ? ` · ${st.forks} 分叉` : ""}` +
+        (data.sessionCount > 1 ? ` · ${data.sessionCount} 个分支会话` : "");
       item.tooltip = new vscode.MarkdownString(
         `**${data.title}**\n\n` +
         `${st.turns} 轮 · ${st.forks} 处分叉\n\n` +
+        `${data.sessionCount} 个 session 文件合并为一个对话标识\n\n` +
         `${data.start.slice(0, 16).replace("T", " ")} → ${data.end.slice(0, 16).replace("T", " ")}\n\n` +
         `\`${data.id}\``);
       // 有分叉的会话才是这张图有看头的地方，用图标区分
       item.iconPath = new vscode.ThemeIcon(st.forks ? "git-branch" : "comment-discussion");
       item.contextValue = "session";
-      item.resourceUri = vscode.Uri.file(s.file);
+      item.resourceUri = vscode.Uri.file(conversation.file);
+      item._conversation = conversation;
       item.command = {
         command: "claudeGraph.open",
         title: "打开分支图",
-        arguments: [s.file],
+        arguments: [conversation.key],
       };
       return item;
     }).filter(Boolean);
@@ -122,7 +159,12 @@ class SessionTree {
 // ---------------------------------------------------------------- Webview
 
 let panel = null;
-let currentFile = null;
+let currentConversationKey = null;
+
+function disposeGraphPanel() {
+  currentConversationKey = null;
+  if (panel) panel.dispose();
+}
 
 function webviewHtml(webview, extensionUri) {
   const uri = f => webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "media", f));
@@ -158,14 +200,15 @@ function webviewHtml(webview, extensionUri) {
 </html>`;
 }
 
-function postSession(file) {
+function postConversation(conversation) {
   if (!panel) return;
-  const data = loadSession(file);
+  const data = loadConversation(conversation);
   if (!data) {
-    vscode.window.showWarningMessage(`无法解析会话：${path.basename(file)}`);
+    disposeGraphPanel();
+    vscode.window.showWarningMessage(`无法解析对话：${conversation.id.slice(0, 8)}`);
     return;
   }
-  currentFile = file;
+  currentConversationKey = conversation.key;
   panel.title = `分支图 · ${data.title.slice(0, 28)}`;
   panel.webview.postMessage({
     type: "session",
@@ -190,12 +233,13 @@ function existingSessionCwd(data, turn) {
 }
 
 /**
- * 在独立终端中恢复到某个原始消息。fork=true 时让 Claude 创建新 session ID；
- * 否则在同一 session 的所选分支尖端继续。绝不接受 webview 传来的路径或 UUID，
+ * 在独立终端中恢复到某个原始消息。Claude Code 2.1.231 的 /branch 与
+ * --fork-session 只能从当前叶子分支，因此先把截至所选消息的祖先链物化成一个
+ * 独立 session，再恢复它。原会话保持不变。绝不接受 webview 传来的路径或 UUID，
  * 所有参数都从当前重新解析的会话中取得。
  */
-async function openClaudeAtTurn(file, turnId, fork) {
-  const data = loadSession(file);
+async function openClaudeAtTurn(conversation, turnId, fork) {
+  const data = loadConversation(conversation);
   const turn = data?.turns.find(t => t.id === turnId);
   if (!data || !turn) {
     vscode.window.showWarningMessage("所选轮次已经不存在，请刷新分支图后重试。");
@@ -232,11 +276,21 @@ async function openClaudeAtTurn(file, turnId, fork) {
     .get("claudeCommand", "claude");
   const executable = typeof configured === "string" && configured.trim()
     ? configured.trim() : "claude";
-  const args = ["--resume", data.id, `--resume-session-at=${resumeAt}`];
-  if (fork) args.push("--fork-session");
-  if (branchName) args.push("--name", branchName);
 
+  const sourceFile = turn.sourceFile;
+  const sourceAllowed = typeof sourceFile === "string" && conversation.sessions.some(session =>
+    path.resolve(session.file) === path.resolve(sourceFile));
+  if (!sourceAllowed) {
+    vscode.window.showErrorMessage("找不到所选轮次所属的原始 session 文件，无法安全创建分支。");
+    return;
+  }
+
+  let branch;
   try {
+    branch = createBranchSession(sourceFile, resumeAt, { name: branchName });
+    cache.delete(conversation.key);
+    const args = ["--resume", branch.id];
+    if (branchName) args.push("--name", branchName);
     const terminal = vscode.window.createTerminal({
       name: fork ? `Claude 分支 · ${branchName || turn.short}` : `Claude · ${turn.short}`,
       cwd,
@@ -245,16 +299,25 @@ async function openClaudeAtTurn(file, turnId, fork) {
     });
     terminal.show();
     vscode.window.showInformationMessage(fork
-      ? "已在新终端从所选轮次创建 Claude 分支。"
-      : "已在新终端切换到所选 Claude 分支。若原会话仍在运行，请避免同时输入。"
+      ? `已从所选轮次创建独立 Claude 分支（${branch.id.slice(0, 8)}）。`
+      : `已把所选分支尖端复制为独立会话（${branch.id.slice(0, 8)}）并打开。`
     );
   } catch (err) {
+    // createTerminal 本身若失败，不留下一个用户从未真正打开的空分支。
+    if (branch?.file) {
+      try { fs.unlinkSync(branch.file); } catch { /* 文件可能已由 Claude 接管 */ }
+    }
     vscode.window.showErrorMessage(
       `无法启动 Claude：${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
-function openGraph(context, file) {
+function openGraph(context, conversationId, tree) {
+  const conversation = tree.getConversation(conversationId);
+  if (!conversation) {
+    vscode.window.showWarningMessage("该对话不属于当前工作区，分支图不会打开。");
+    return;
+  }
   if (panel) {
     panel.reveal(vscode.ViewColumn.Active);
   } else {
@@ -266,35 +329,41 @@ function openGraph(context, file) {
         localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "media")],
       });
     panel.webview.html = webviewHtml(panel.webview, context.extensionUri);
-    panel.onDidDispose(() => { panel = null; currentFile = null; }, null, context.subscriptions);
+    panel.onDidDispose(() => {
+      panel = null;
+      currentConversationKey = null;
+    }, null, context.subscriptions);
     panel.webview.onDidReceiveMessage(async msg => {
-      if (msg.type === "openFile" && currentFile) {
-        vscode.window.showTextDocument(vscode.Uri.file(currentFile));
-      } else if (msg.type === "ready" && currentFile) {
-        postSession(currentFile);
-      } else if ((msg.type === "forkTurn" || msg.type === "resumeTurn") && currentFile) {
-        const fileAtClick = currentFile;
-        await openClaudeAtTurn(fileAtClick, msg.turnId, msg.type === "forkTurn");
+      const current = tree.getConversation(currentConversationKey);
+      if (msg.type === "openFile" && current) {
+        vscode.window.showTextDocument(vscode.Uri.file(current.file));
+      } else if (msg.type === "ready" && current) {
+        postConversation(current);
+      } else if ((msg.type === "forkTurn" || msg.type === "resumeTurn") && current) {
+        await openClaudeAtTurn(current, msg.turnId, msg.type === "forkTurn");
       }
     }, null, context.subscriptions);
   }
-  postSession(file);
+  postConversation(conversation);
 }
 
-/** 当前工作区对应的最近一个会话。目录名是 cwd 把 / 换成 - 得来的。 */
-function sessionForWorkspace() {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return null;
-  const encoded = folder.uri.fsPath.replace(/\//g, "-");
-  for (const p of listSessionFiles(PROJECTS_DIR)) {
-    if (p.dir === encoded) return p.sessions[0].file;   // sessions 已按 mtime 降序
+/** 重扫当前工作区，并确保已打开的图没有越过工作区边界或指向已删除文件。 */
+function refreshTreeAndPanel(tree, changedFile = null) {
+  tree.refresh();
+  if (!currentConversationKey) return;
+  const conversation = tree.getConversation(currentConversationKey);
+  if (!conversation) {
+    disposeGraphPanel();
+    return;
   }
-  // 退一步：按解析出来的真实 cwd 匹配
-  for (const p of listSessionFiles(PROJECTS_DIR)) {
-    const d = loadSession(p.sessions[0].file);
-    if (d && d.cwd === folder.uri.fsPath) return p.sessions[0].file;
+  const changedPath = changedFile ? path.resolve(changedFile) : null;
+  const changedMember = !changedPath || conversation.sessions.some(session =>
+    path.resolve(session.file) === changedPath) ||
+    (!fs.existsSync(changedPath) && conversation.sessions.some(session =>
+      path.dirname(path.resolve(session.file)) === path.dirname(changedPath)));
+  if (changedMember) {
+    postConversation(conversation);
   }
-  return null;
 }
 
 // ---------------------------------------------------------------- 激活
@@ -308,25 +377,24 @@ function activate(context) {
 
     vscode.commands.registerCommand("claudeGraph.refresh", () => {
       cache.clear();
-      tree.refresh();
-      if (currentFile) postSession(currentFile);
+      refreshTreeAndPanel(tree);
     }),
 
-    vscode.commands.registerCommand("claudeGraph.open", file => {
-      if (typeof file === "string") openGraph(context, file);
+    vscode.commands.registerCommand("claudeGraph.open", conversationId => {
+      if (typeof conversationId === "string") openGraph(context, conversationId, tree);
     }),
 
     vscode.commands.registerCommand("claudeGraph.openCurrent", () => {
-      const file = sessionForWorkspace();
-      if (file) return openGraph(context, file);
+      const conversation = tree.latestConversation();
+      if (conversation) return openGraph(context, conversation.key, tree);
       vscode.window.showInformationMessage(
-        "当前工作区没有对应的 Claude Code 会话记录。可以从侧边栏挑一个。");
+        "当前工作区没有 Claude Code 会话记录。先在这个目录中启动 Claude Code 并进行对话。");
       vscode.commands.executeCommand("claudeGraph.sessions.focus");
     }),
 
     vscode.commands.registerCommand("claudeGraph.revealFile", item => {
-      const uri = item?.resourceUri;
-      if (uri) vscode.window.showTextDocument(uri);
+      const conversation = tree.getConversation(item?._conversation?.key);
+      if (conversation) vscode.window.showTextDocument(vscode.Uri.file(conversation.file));
     }),
   );
 
@@ -339,8 +407,7 @@ function activate(context) {
     clearTimeout(timer);
     // Claude Code 是逐行追加写的，一次回答会触发很多次事件，去抖一下
     timer = setTimeout(() => {
-      tree.refresh();
-      if (currentFile && uri.fsPath === currentFile) postSession(currentFile);
+      refreshTreeAndPanel(tree, uri.fsPath);
     }, 500);
   };
   watcher.onDidChange(onChange);
@@ -349,12 +416,16 @@ function activate(context) {
   context.subscriptions.push(watcher);
 
   context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      cache.clear();
+      refreshTreeAndPanel(tree);
+    }),
+
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration("claudeGraph")) return;
       if (e.affectsConfiguration("claudeGraph.maxChars") ||
           e.affectsConfiguration("claudeGraph.maxPrompt")) cache.clear();
-      tree.refresh();
-      if (currentFile) postSession(currentFile);
+      refreshTreeAndPanel(tree);
     }),
   );
 }

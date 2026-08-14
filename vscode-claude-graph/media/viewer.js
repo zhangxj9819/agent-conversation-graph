@@ -162,10 +162,10 @@ function renderDetail() {
     <div class="turn-actions">
       <button class="action primary" id="fork-turn">从此轮创建分支</button>
       ${ref ? `<button class="action" id="resume-turn">${
-        ref === "HEAD" ? "继续此分支" : `切换到 ${esc(ref)}`}</button>` : ""}
+        ref === "HEAD" ? "从此尖端继续（新会话）" : `从 ${esc(ref)} 继续（新会话）`}</button>` : ""}
     </div>
-    <div class="action-note">新分支会复制截至此轮的对话并在新终端打开；切换会从这个分支尖端继续。
-      两者都不会切换 Git 分支或回滚文件。</div>
+    <div class="action-note">两项操作都会精确复制截至所选轮次的对话并在新终端打开；原会话不变。
+      只处理对话上下文，不会切换 Git 分支或回滚文件。</div>
     ${branchList(view.kids.get(t.id) || [], t.id,
       `从这里分出 ${(view.kids.get(t.id) || []).length} 条 —— 你在这一轮之后回退改写`)}
     ${branchList(sibs.length > 1 ? sibs : [], t.id,

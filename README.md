@@ -49,7 +49,8 @@ python3 claude_graph.py --all -o graph.html       # 全部项目
 - `j` / `k` 或方向键上下移动，搜索框过滤提问内容
 - URL 形如 `#1fce10c5/d42b0ea`，可以直接分享到某一轮
 - 右上角 ◐ 在 浅色 / 深色 / 跟随系统 之间切换
-- VS Code 插件中可从任意轮次创建新的 Claude 对话分支，也可在分支尖端继续该分支
+- VS Code 插件只显示当前工作区对应的对话；共享根消息 UUID 的多个分支 session 会合并为
+  一个对话标识。可从任意轮次创建新的 Claude 对话分支，也可在分支尖端继续该分支
 
 默认只显示真实提问；勾选「显示命令与系统事件」可以放出 `/model`、`/compact`、
 子任务通知、用户打断等记录。
@@ -60,11 +61,12 @@ python3 claude_graph.py --all -o graph.html       # 全部项目
 
 - **从此轮创建分支**：可选填分支名，在新终端复制截至该轮的对话并创建新的 session ID，
   原会话保持不变。
-- **切换到 tip/HEAD**：分支尖端节点会显示切换按钮，在新终端从该尖端继续同一个 session。
+- **从 tip/HEAD 继续**：分支尖端节点会显示继续按钮，把该尖端复制为独立 session 后打开。
 
-扩展通过 Claude Code 的恢复/分叉参数启动 CLI，不会直接改写 `~/.claude`。这些操作只改变
-Claude 对话上下文，**不会切换 Git 分支或回滚文件**。已用 Claude Code 2.1.231 验证；
-如果扩展宿主找不到 `claude`，可在设置中为 `claudeGraph.claudeCommand` 填写绝对路径。
+Claude Code 2.1.231 的 `/branch` / `--fork-session` 只能从当前叶子分支，不能指定图中的
+历史 UUID。扩展会在原会话旁新增一份只含所选祖先链的 JSONL，再恢复这个独立 session；
+原会话不会被修改或删除。这些操作只改变 Claude 对话上下文，**不会切换 Git 分支或回滚
+文件**。如果扩展宿主找不到 `claude`，可在设置中为 `claudeGraph.claudeCommand` 填写绝对路径。
 
 ## 实现要点
 
@@ -142,7 +144,7 @@ vscode-claude-graph/   VS Code 插件
 ```bash
 python3 claude_graph.py --all      # 先生成数据
 node test_layout.mjs               # 布局不变量
-cd vscode-claude-graph && npm test # 插件 31 项检查
+cd vscode-claude-graph && npm test # 插件 37 项检查
 ```
 
 布局算法用真实数据做了不变量测试（覆盖两种过滤模式 × 47 个会话）：

@@ -2,7 +2,7 @@
   "name": "claude-conversation-graph",
   "displayName": "Claude 对话分支图",
   "description": "把 Claude Code 的对话历史渲染成 git-graph 风格的分支图，回退改写一目了然。",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -42,7 +42,7 @@
     "viewsWelcome": [
       {
         "view": "claudeGraph.sessions",
-        "contents": "没有找到 Claude Code 的对话记录。\n记录位于 ~/.claude/projects/，先用 Claude Code 聊几句再回来。\n[重新扫描](command:claudeGraph.refresh)"
+        "contents": "当前工作区没有 Claude Code 对话记录。\n先在这个目录中启动 Claude Code 并进行对话。\n[重新扫描](command:claudeGraph.refresh)"
       }
     ],
     "commands": [

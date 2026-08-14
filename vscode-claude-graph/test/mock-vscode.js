@@ -63,7 +63,7 @@ const vscode = {
   ViewColumn: { Active: -1, One: 1 },
 
   workspace: {
-    workspaceFolders: undefined,
+    workspaceFolders: [{ uri: Uri.file("/tmp") }],
     getConfiguration() {
       return { get: (key, def) => (key in config ? config[key] : def) };
     },
@@ -80,6 +80,7 @@ const vscode = {
       return w;
     },
     onDidChangeConfiguration(fn) { calls.onConfig = fn; return { dispose() {} }; },
+    onDidChangeWorkspaceFolders(fn) { calls.onWorkspaceFolders = fn; return { dispose() {} }; },
   },
 
   window: {
@@ -100,7 +101,7 @@ const vscode = {
         },
         reveal() { panel.revealed = true; },
         onDidDispose(fn) { panel._onDispose = fn; return { dispose() {} }; },
-        dispose() { if (panel._onDispose) panel._onDispose(); },
+        dispose() { panel.disposed = true; if (panel._onDispose) panel._onDispose(); },
       };
       calls.panels.push(panel);
       return panel;

@@ -8,17 +8,19 @@
 ## 安装
 
 ```bash
-npm test                      # 31 项检查，不需要开编辑器
-npx @vscode/vsce package      # 产出 claude-conversation-graph-0.2.0.vsix
-code --install-extension claude-conversation-graph-0.2.0.vsix
+npm test                      # 37 项检查，不需要开编辑器
+npx @vscode/vsce package      # 产出 claude-conversation-graph-0.2.3.vsix
+code --install-extension claude-conversation-graph-0.2.3.vsix
 ```
 
 或者直接在这个目录按 `F5`，会拉起一个装好插件的 Extension Development Host 窗口。
 
 ## 用
 
-活动栏里的分支图标打开「Claude 对话分支图」，树里按项目列出会话，
-带 `git-branch` 图标的是**有分叉**的会话 —— 那些才有东西可看。点一下开图。
+活动栏里的分支图标打开「Claude 对话分支图」，树里只列出 **VS Code 当前工作区根目录**
+对应的 Claude Code 对话，不会混入其他项目。同一次对话通过 `/branch` 产生的多个 session
+文件会按第一条消息 UUID 合并为一个对话标识，不会在侧栏重复占位。带 `git-branch` 图标的
+是**有分叉**的对话——那些才有东西可看。点一下开图。
 
 命令面板还有：
 
@@ -32,18 +34,20 @@ code --install-extension claude-conversation-graph-0.2.0.vsix
 
 分叉点会列出「从这里分出 N 条」，每条带 `tip/N` 标签；通向最新一轮的那条标 `HEAD`。
 
-### 创建与切换分支
+### 创建与继续分支
 
 选中一个节点后，详情面板提供两个实际操作：
 
 - **从此轮创建分支**：任意节点都可用。可选填名称，扩展会在新终端运行 Claude，复制截至
   该轮的上下文并创建新的 session ID，原会话不变。
-- **切换到 tip/HEAD**：仅分支尖端显示。从该尖端恢复同一个 session，之后的新消息会接在
-  这条分支下。若同一 session 仍在别的终端运行，不要在两个终端同时输入，以免记录交错。
+- **从 tip/HEAD 继续**：仅分支尖端显示。把截至该尖端的上下文复制成独立 session，再在
+  新终端继续，避免新消息误接到原会话当前的最新节点。
 
 分支操作只处理 Claude 对话，不会切换 Git 分支，也不会恢复 checkpoint 对应的文件。
-功能已用 Claude Code 2.1.231 验证。扩展不会直接修改 JSONL，而是调用 Claude CLI 的恢复/
-分叉能力。
+功能已用 Claude Code 2.1.231 验证。该版本的 `/branch` / `--fork-session` 只能从当前叶子
+分支，不能接收图中历史消息的 UUID；扩展因此会在原文件旁新增一份只含所选祖先链的
+JSONL，再调用 `claude --resume <新 session>`。原会话文件不会被修改或删除；若终端启动
+失败，新建文件会立即回滚。
 
 默认只显示真实提问，勾选「命令与系统事件」可放出 `/model`、`/compact`、子任务通知、
 用户打断等记录。
@@ -63,6 +67,10 @@ code --install-extension claude-conversation-graph-0.2.0.vsix
 - **跟着对话实时刷新**：监听 `~/.claude/projects/**/*.jsonl`，你在另一个窗口跟 Claude
   说话，图会跟着长。Claude Code 是逐行追加写的，一次回答触发很多次事件，所以做了
   500ms 去抖。
+- **限定当前工作区**：侧栏和图面板都拒绝显示其他目录的会话；切换工作区或删除当前会话
+  时，会关闭已经失效的旧图面板。
+- **一个对话一个标识**：共享根消息 UUID 的原会话和全部分支 session 会合并成一个侧栏
+  条目；打开后汇总各文件的独有轮次，重复祖先 UUID 只保留一份。
 - **按需加载**：树视图只读文件元信息，选中某个会话才解析它，解析结果按 mtime + size
   缓存。全量导出成单文件 HTML 是 3.5 MB，这里不需要一次性吃进去。
 - **跟随编辑器主题**：界面色全部走 `--vscode-*` 令牌。
@@ -71,7 +79,8 @@ code --install-extension claude-conversation-graph-0.2.0.vsix
 
 ```
 extension.js        扩展宿主：扫描、解析调度、文件监听、webview 生命周期
-src/parser.js       .jsonl → 轮次树
+src/parser.js       多个同谱系 .jsonl → 去重后的轮次树
+src/session-branch.js 精确复制到所选消息并创建独立 session
 media/layout.js     轮次树 → 泳道布局（与仓库根的 layout.js 是同一份）
 media/viewer.js     webview 渲染
 test/mock-vscode.js 最小 vscode API 替身

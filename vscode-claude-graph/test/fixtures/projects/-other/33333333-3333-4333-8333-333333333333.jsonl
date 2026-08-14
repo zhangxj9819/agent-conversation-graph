@@ -1,0 +1,2 @@
+{"type":"user","uuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","parentUuid":null,"timestamp":"2026-08-03T10:00:00.000Z","cwd":"/other","gitBranch":"main","version":"2.1.231","message":{"content":"其他工作区的会话"}}
+{"type":"assistant","uuid":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","parentUuid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","timestamp":"2026-08-03T10:00:01.000Z","message":{"model":"claude-sonnet","usage":{"output_tokens":8},"content":[{"type":"text","text":"这条会话不应出现在 /tmp 工作区。"}]}}

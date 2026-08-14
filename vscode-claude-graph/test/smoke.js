@@ -9,10 +9,16 @@
 "use strict";
 
 const assert = require("node:assert");
+const fs = require("node:fs");
 const Module = require("node:module");
+const os = require("node:os");
 const path = require("node:path");
 
-process.env.CLAUDE_CONFIG_DIR = path.resolve(__dirname, "fixtures");
+// 分支测试会真实创建一个新的 JSONL。始终在临时副本上运行，固定 fixture 只读。
+const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "claude-graph-test-"));
+const testConfigDir = path.join(testRoot, "config");
+fs.cpSync(path.resolve(__dirname, "fixtures"), testConfigDir, { recursive: true });
+process.env.CLAUDE_CONFIG_DIR = testConfigDir;
 
 const { vscode, calls, config } = require("./mock-vscode");
 
@@ -57,19 +63,25 @@ check("注册了 .jsonl 文件监听", () => {
 const tree = calls.treeProviders.get("claudeGraph.sessions");
 const projects = tree.getChildren();
 
-check("树顶层列出了项目", () => {
-  assert.ok(Array.isArray(projects) && projects.length > 0, "没有扫描到任何项目");
+check("树顶层只列出当前工作区项目", () => {
+  assert.strictEqual(projects.length, 1, "混入了其他工作区的项目");
+  assert.strictEqual(projects[0].label, "tmp");
+  assert.strictEqual(projects[0].description, "2 个对话");
   assert.ok(projects.every(p => p.contextValue === "project"));
   assert.ok(projects.every(p => typeof p.label === "string" && p.label.length));
 });
 
 let sessions = [];
-check("展开项目能列出会话", () => {
+check("展开项目按根 UUID 列出对话而不是 JSONL 文件", () => {
   sessions = projects.flatMap(p => tree.getChildren(p));
-  assert.ok(sessions.length > 0, "没有会话");
+  assert.strictEqual(sessions.length, 2, "共享根 UUID 的分支 session 没有合并");
   assert.ok(sessions.every(s => s.contextValue === "session"));
   assert.ok(sessions.every(s => s.command?.command === "claudeGraph.open"));
   assert.ok(sessions.every(s => /^\d+ 轮/.test(s.description)));
+  assert.ok(sessions.every(s => path.basename(path.dirname(s.resourceUri.fsPath)) === "-tmp"),
+    "混入了其他工作区的会话");
+  assert.ok(sessions.some(s => s.description.includes("2 个分支会话")),
+    "没有标出被合并的两个 session 文件");
 });
 
 check("有分叉的会话用 git-branch 图标区分", () => {
@@ -81,8 +93,19 @@ check("有分叉的会话用 git-branch 图标区分", () => {
 });
 
 // ---- 打开 webview ---------------------------------------------------------
-const targetFile = sessions.find(s => s.description.includes("分叉")).resourceUri.fsPath;
-calls.registeredCommands.get("claudeGraph.open")(targetFile);
+const targetItem = sessions.find(s => s.description.includes("分叉"));
+const targetFile = targetItem.resourceUri.fsPath;
+const targetConversationId = targetItem.command.arguments[0];
+const outsideFile = path.join(testConfigDir,
+  "projects/-other/33333333-3333-4333-8333-333333333333.jsonl");
+
+calls.registeredCommands.get("claudeGraph.open")(outsideFile);
+check("拒绝打开其他工作区的会话", () => {
+  assert.strictEqual(calls.panels.length, 0, "为其他工作区创建了图面板");
+  assert.ok(calls.executed.some(x => x[0] === "warn" && x[1].includes("不属于当前工作区")));
+});
+
+calls.registeredCommands.get("claudeGraph.open")(targetConversationId);
 
 check("创建了 webview 面板", () => assert.strictEqual(calls.panels.length, 1));
 
@@ -116,6 +139,12 @@ check("向 webview 投递了会话数据", () => {
   assert.strictEqual(msg.type, "session");
   assert.ok(msg.session.turns.length > 0, "轮次为空");
   assert.strictEqual(typeof msg.showNoise, "boolean");
+  assert.strictEqual(msg.session.id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  assert.strictEqual(msg.session.sessionCount, 2);
+  assert.ok(msg.session.turns.some(t => t.body === "改用 Passkey"),
+    "另一个 session 的独有轮次没有合入对话树");
+  assert.ok(msg.session.turns.every(t => typeof t.sourceFile === "string" && t.sourceFile),
+    "合并后有轮次丢失原始文件定位");
   const t = msg.session.turns[0];
   for (const f of ["id", "short", "parent", "resumeAt", "ts", "kind", "title", "body", "steps"]) {
     assert.ok(f in t, `轮次缺少字段 ${f}`);
@@ -134,6 +163,12 @@ check("投递的轮次树里存在真实分叉", () => {
 check("webview 请求打开原始文件能被处理", () => {
   calls.executed.length = 0;
   calls.panels[0]._onMessage({ type: "openFile" });
+  assert.deepStrictEqual(calls.executed.at(-1), ["open", targetFile]);
+});
+
+check("聚合后的侧栏条目仍能打开代表 session 原文件", () => {
+  calls.executed.length = 0;
+  calls.registeredCommands.get("claudeGraph.revealFile")(targetItem);
   assert.deepStrictEqual(calls.executed.at(-1), ["open", targetFile]);
 });
 
@@ -196,6 +231,19 @@ setTimeout(async () => {
     childCounts.set(t.parent, (childCounts.get(t.parent) || 0) + 1);
   const forkPoint = data.turns.find(t => childCounts.get(t.id) > 1);
   const branchTip = data.turns.find(t => t.parent === forkPoint.id);
+  const sourceDir = path.dirname(targetFile);
+  const sourceBeforeBranch = new Map(fs.readdirSync(sourceDir)
+    .filter(name => name.endsWith(".jsonl"))
+    .map(name => {
+      const file = path.join(sourceDir, name);
+      return [file, fs.readFileSync(file, "utf8")];
+    }));
+  const assertSourcesUnchanged = () => {
+    for (const [file, before] of sourceBeforeBranch) {
+      assert.strictEqual(fs.readFileSync(file, "utf8"), before,
+        `原 session 被改写：${path.basename(file)}`);
+    }
+  };
 
   calls.inputBoxResponses.push("oauth-experiment");
   await calls.panels[0]._onMessage({ type: "forkTurn", turnId: forkPoint.id });
@@ -204,22 +252,58 @@ setTimeout(async () => {
     assert.ok(term.shown, "终端没有显示");
     assert.strictEqual(term.options.shellPath, "claude");
     assert.strictEqual(term.options.cwd, "/tmp");
-    assert.deepStrictEqual(term.options.shellArgs, [
-      "--resume", data.id,
-      `--resume-session-at=${forkPoint.resumeAt}`,
-      "--fork-session", "--name", "oauth-experiment",
-    ]);
+    assert.strictEqual(term.options.shellArgs[0], "--resume");
+    assert.notStrictEqual(term.options.shellArgs[1], data.id, "仍在恢复原会话");
+    assert.deepStrictEqual(term.options.shellArgs.slice(2), ["--name", "oauth-experiment"]);
+    assert.ok(!term.options.shellArgs.some(arg => arg.startsWith("--resume-session-at")),
+      "仍在使用 Claude 2.1.231 已移除的参数");
+    assert.ok(!term.options.shellArgs.includes("--fork-session"),
+      "物化后的新会话不应再次从最新节点分叉");
+  });
+
+  check("新分支只复制到所选轮次且原会话逐字节不变", () => {
+    const branchId = calls.terminals.at(-1).options.shellArgs[1];
+    const branchFile = path.join(sourceDir, `${branchId}.jsonl`);
+    const rows = fs.readFileSync(branchFile, "utf8").trim().split("\n").map(JSON.parse);
+    const uuids = rows.filter(r => r.uuid).map(r => r.uuid);
+    assert.deepStrictEqual(uuids, [forkPoint.id, forkPoint.resumeAt]);
+    assert.strictEqual(rows.at(-1).type, "last-prompt");
+    assert.strictEqual(rows.at(-1).leafUuid, forkPoint.resumeAt);
+    assert.ok(rows.filter(r => r.uuid).every(r => r.sessionId === branchId));
+    assert.ok(rows.some(r => r.type === "custom-title" &&
+      r.customTitle === "oauth-experiment"));
+    assert.strictEqual(require("../src/parser").parseSession(branchFile).title,
+      "oauth-experiment", "新分支名没有显示为会话标题");
+    assertSourcesUnchanged();
   });
 
   await calls.panels[0]._onMessage({ type: "resumeTurn", turnId: branchTip.id });
-  check("可切换到所选分支尖端", () => {
+  check("切换旧分支尖端时也精确复制为独立会话", () => {
     const term = calls.terminals.at(-1);
     assert.ok(term.shown, "终端没有显示");
-    assert.deepStrictEqual(term.options.shellArgs, [
-      "--resume", data.id,
-      `--resume-session-at=${branchTip.resumeAt}`,
-    ]);
-    assert.ok(!term.options.shellArgs.includes("--fork-session"));
+    assert.strictEqual(term.options.shellArgs[0], "--resume");
+    assert.notStrictEqual(term.options.shellArgs[1], data.id);
+    assert.strictEqual(term.options.shellArgs.length, 2);
+    const branchFile = path.join(sourceDir,
+      `${term.options.shellArgs[1]}.jsonl`);
+    const rows = fs.readFileSync(branchFile, "utf8").trim().split("\n").map(JSON.parse);
+    assert.strictEqual(rows.at(-1).leafUuid, branchTip.resumeAt);
+    assert.ok(!rows.some(r => r.uuid === "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
+      "混入了另一个更新分支的消息");
+    assert.ok(!rows.some(r => r.uuid === "99999999-9999-4999-8999-999999999999"),
+      "混入了另一个 session 文件的分支消息");
+    assertSourcesUnchanged();
+  });
+
+  calls.registeredCommands.get("claudeGraph.refresh")();
+  check("新增分支 session 刷新后仍只占一个对话位置", () => {
+    const refreshedProject = tree.getChildren()[0];
+    const conversations = tree.getChildren(refreshedProject);
+    assert.strictEqual(conversations.length, 2);
+    const merged = conversations.find(item => item._conversation.id === data.id);
+    assert.ok(merged, "刷新后丢失原对话标识");
+    assert.ok(merged.description.includes("4 个分支会话"), merged.description);
+    assert.strictEqual(calls.messages.at(-1).session.sessionCount, 4);
   });
 
   const terminalCount = calls.terminals.length;
@@ -227,8 +311,23 @@ setTimeout(async () => {
   check("拒绝 Webview 请求不存在的轮次", () =>
     assert.strictEqual(calls.terminals.length, terminalCount));
 
+  const activePanel = calls.panels[0];
+  vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file("/other") }];
+  calls.onWorkspaceFolders({});
+  const switchedProjects = tree.getChildren();
+  check("切换工作区后只列出新目录的会话", () => {
+    assert.strictEqual(switchedProjects.length, 1);
+    assert.strictEqual(switchedProjects[0].label, "other");
+    const switchedSessions = tree.getChildren(switchedProjects[0]);
+    assert.strictEqual(switchedSessions.length, 1);
+    assert.strictEqual(switchedSessions[0].resourceUri.fsPath, outsideFile);
+  });
+  check("切换工作区后关闭旧目录的图面板", () =>
+    assert.strictEqual(activePanel.disposed, true));
+
   ext.deactivate();
   Module._load = origLoad;
+  fs.rmSync(testRoot, { recursive: true, force: true });
 
   for (const [mark, name] of checks) console.log(`  ${mark} ${name}`);
   const failed = checks.filter(c => c[0] === "✗").length;
