@@ -50,6 +50,7 @@ const config = {
   showSystemEvents: false,
   autoRefresh: true,
   claudeCommand: "claude",
+  codexCommand: "codex",
 };
 
 const vscode = {

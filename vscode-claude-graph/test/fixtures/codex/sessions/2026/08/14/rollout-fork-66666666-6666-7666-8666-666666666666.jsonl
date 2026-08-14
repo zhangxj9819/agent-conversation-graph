@@ -1,0 +1,15 @@
+{"timestamp":"2026-08-14T01:10:00.000Z","type":"session_meta","payload":{"session_id":"55555555-5555-7555-8555-555555555555","id":"66666666-6666-7666-8666-666666666666","forked_from_id":"55555555-5555-7555-8555-555555555555","timestamp":"2026-08-14T01:10:00.000Z","cwd":"/tmp","originator":"codex-tui","cli_version":"0.147.0","source":"cli","thread_source":"user","model_provider":"openai"}}
+{"timestamp":"2026-08-14T01:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","started_at":1786678801}}
+{"timestamp":"2026-08-14T01:00:01.100Z","type":"turn_context","payload":{"turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","cwd":"/tmp","model":"gpt-5.6"}}
+{"timestamp":"2026-08-14T01:00:01.150Z","type":"response_item","payload":{"type":"message","id":"msg-user-a","role":"user","content":[{"type":"input_text","text":"设计登录方案"}]}}
+{"timestamp":"2026-08-14T01:00:01.200Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","item":{"type":"UserMessage","id":"item-user-a","content":[{"type":"text","text":"设计登录方案"}]}}}
+{"timestamp":"2026-08-14T01:00:03.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","item":{"type":"AgentMessage","id":"item-agent-a","content":[{"type":"Text","text":"先使用标准 OAuth 流程。"}],"phase":"final"}}}
+{"timestamp":"2026-08-14T01:00:03.050Z","type":"response_item","payload":{"type":"message","id":"msg-agent-a","role":"assistant","content":[{"type":"output_text","text":"先使用标准 OAuth 流程。"}],"phase":"final"}}
+{"timestamp":"2026-08-14T01:00:04.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa"}}
+{"timestamp":"2026-08-14T01:15:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"cccccccc-cccc-7ccc-8ccc-cccccccccccc","started_at":1786679701}}
+{"timestamp":"2026-08-14T01:15:01.100Z","type":"turn_context","payload":{"turn_id":"cccccccc-cccc-7ccc-8ccc-cccccccccccc","cwd":"/tmp","model":"gpt-5.6"}}
+{"timestamp":"2026-08-14T01:15:01.150Z","type":"response_item","payload":{"type":"message","id":"msg-user-c","role":"user","content":[{"type":"input_text","text":"改用 Passkey"}]}}
+{"timestamp":"2026-08-14T01:15:01.200Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"cccccccc-cccc-7ccc-8ccc-cccccccccccc","item":{"type":"UserMessage","id":"item-user-c","content":[{"type":"text","text":"改用 Passkey"}]}}}
+{"timestamp":"2026-08-14T01:15:02.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"cccccccc-cccc-7ccc-8ccc-cccccccccccc","item":{"type":"AgentMessage","id":"item-agent-c","content":[{"type":"Text","text":"Passkey 分支已经建立。"}],"phase":"final"}}}
+{"timestamp":"2026-08-14T01:15:02.050Z","type":"response_item","payload":{"type":"message","id":"msg-agent-c","role":"assistant","content":[{"type":"output_text","text":"Passkey 分支已经建立。"}],"phase":"final"}}
+{"timestamp":"2026-08-14T01:15:03.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"cccccccc-cccc-7ccc-8ccc-cccccccccccc"}}

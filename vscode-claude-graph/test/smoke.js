@@ -19,13 +19,23 @@ const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "claude-graph-test-"));
 const testConfigDir = path.join(testRoot, "config");
 fs.cpSync(path.resolve(__dirname, "fixtures"), testConfigDir, { recursive: true });
 process.env.CLAUDE_CONFIG_DIR = testConfigDir;
+process.env.CODEX_HOME = path.join(testConfigDir, "codex");
 
 const { vscode, calls, config } = require("./mock-vscode");
 
 // 把 require("vscode") 换成替身
 const origLoad = Module._load;
+const codexForkCalls = [];
 Module._load = function (request, parent, isMain) {
   if (request === "vscode") return vscode;
+  if (request === "./src/codex-app-server" && parent?.filename.endsWith("extension.js")) {
+    return {
+      forkThread: async options => {
+        codexForkCalls.push(options);
+        return { id: "99999999-9999-7999-8999-999999999999", nameSet: Boolean(options.name) };
+      },
+    };
+  }
   return origLoad.call(this, request, parent, isMain);
 };
 
@@ -37,6 +47,15 @@ const check = (name, fn) => {
   catch (e) { checks.push(["✗", `${name} —— ${e.message}`]); }
 };
 
+check("Codex app-server fork 缺少 turn_context 时仍保留用户消息", () => {
+  const { parseCodexSession } = require("../src/codex-parser");
+  const parsed = parseCodexSession(path.resolve(
+    __dirname, "fixtures/codex/app-server-fork.jsonl"));
+  assert.strictEqual(parsed.turns.length, 1);
+  assert.strictEqual(parsed.turns[0].id, "aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa");
+  assert.strictEqual(parsed.turns[0].body, "设计登录方案");
+});
+
 // ---- 激活 -----------------------------------------------------------------
 const context = {
   subscriptions: [],
@@ -44,44 +63,69 @@ const context = {
 };
 ext.activate(context);
 
-check("activate 注册了 4 个命令", () => {
+check("activate 注册了 Claude/Codex 各自的命令", () => {
   assert.deepStrictEqual([...calls.registeredCommands.keys()].sort(), [
-    "claudeGraph.open", "claudeGraph.openCurrent",
-    "claudeGraph.refresh", "claudeGraph.revealFile",
+    "claudeGraph.open", "claudeGraph.openCurrent", "claudeGraph.refresh",
+    "claudeGraph.revealFile", "codexGraph.openCurrent", "codexGraph.refresh",
   ]);
 });
 
-check("注册了会话树视图", () =>
-  assert.ok(calls.treeProviders.has("claudeGraph.sessions")));
+check("一个活动栏容器内注册 Claude/Codex 两个独立 View", () => {
+  const manifest = require("../package.json");
+  assert.deepStrictEqual(
+    manifest.contributes.viewsContainers.activitybar.map(item => item.id),
+    ["claudeGraph"]);
+  assert.deepStrictEqual(
+    manifest.contributes.views.claudeGraph.map(view => view.id),
+    ["claudeGraph.sessions", "codexGraph.sessions"]);
+  assert.strictEqual(manifest.contributes.views.codexGraph, undefined,
+    "Codex 被错误注册成第二个活动栏容器");
+  assert.ok(calls.treeProviders.has("claudeGraph.sessions"));
+  assert.ok(calls.treeProviders.has("codexGraph.sessions"));
+});
 
-check("注册了 .jsonl 文件监听", () => {
-  assert.strictEqual(calls.watchers.length, 1);
-  assert.strictEqual(calls.watchers[0].pattern.pattern, "**/*.jsonl");
+check("同时监听 Claude 与 Codex 的 .jsonl", () => {
+  assert.strictEqual(calls.watchers.length, 2);
+  assert.ok(calls.watchers.every(w => w.pattern.pattern === "**/*.jsonl"));
+  assert.ok(calls.watchers.some(w => w.pattern.base.fsPath.endsWith(path.join("config", "projects"))));
+  assert.ok(calls.watchers.some(w => w.pattern.base.fsPath.endsWith(path.join("codex", "sessions"))));
 });
 
 // ---- 树视图 ---------------------------------------------------------------
 const tree = calls.treeProviders.get("claudeGraph.sessions");
+const codexTree = calls.treeProviders.get("codexGraph.sessions");
 const projects = tree.getChildren();
+const codexProjects = codexTree.getChildren();
 
-check("树顶层只列出当前工作区项目", () => {
+check("同一活动栏的两个 View 都只列出当前工作区项目", () => {
   assert.strictEqual(projects.length, 1, "混入了其他工作区的项目");
+  assert.strictEqual(codexProjects.length, 1, "Codex 混入了其他工作区的项目");
   assert.strictEqual(projects[0].label, "tmp");
+  assert.strictEqual(codexProjects[0].label, "tmp");
   assert.strictEqual(projects[0].description, "2 个对话");
-  assert.ok(projects.every(p => p.contextValue === "project"));
-  assert.ok(projects.every(p => typeof p.label === "string" && p.label.length));
+  assert.strictEqual(codexProjects[0].description, "1 个对话");
+  assert.ok([...projects, ...codexProjects].every(p => p.contextValue === "project"));
+  assert.ok([...projects, ...codexProjects]
+    .every(p => typeof p.label === "string" && p.label.length));
 });
 
 let sessions = [];
-check("展开项目按根 UUID 列出对话而不是 JSONL 文件", () => {
+let codexSessions = [];
+check("Claude 与 Codex 会话分别归入各自 View", () => {
   sessions = projects.flatMap(p => tree.getChildren(p));
-  assert.strictEqual(sessions.length, 2, "共享根 UUID 的分支 session 没有合并");
-  assert.ok(sessions.every(s => s.contextValue === "session"));
-  assert.ok(sessions.every(s => s.command?.command === "claudeGraph.open"));
-  assert.ok(sessions.every(s => /^\d+ 轮/.test(s.description)));
-  assert.ok(sessions.every(s => path.basename(path.dirname(s.resourceUri.fsPath)) === "-tmp"),
-    "混入了其他工作区的会话");
-  assert.ok(sessions.some(s => s.description.includes("2 个分支会话")),
-    "没有标出被合并的两个 session 文件");
+  codexSessions = codexProjects.flatMap(p => codexTree.getChildren(p));
+  assert.strictEqual(sessions.length, 2, "Claude 侧栏混入 Codex 或分支没有合并");
+  assert.strictEqual(codexSessions.length, 1, "Codex fork 重复占位或子 agent 混入");
+  assert.ok(sessions.every(s => s._conversation.provider === "claude"));
+  assert.ok(codexSessions.every(s => s._conversation.provider === "codex"));
+  assert.ok([...sessions, ...codexSessions].every(s => s.contextValue === "session"));
+  assert.ok([...sessions, ...codexSessions]
+    .every(s => s.command?.command === "claudeGraph.open"));
+  assert.ok([...sessions, ...codexSessions].every(s => /^\d+ 轮/.test(s.description)));
+  assert.ok(sessions.every(s => path.basename(path.dirname(s.resourceUri.fsPath)) === "-tmp"));
+  assert.ok(codexSessions[0].description.includes("2 个分支"));
+  assert.ok(![...sessions, ...codexSessions]
+    .some(s => s.label === "其他项目" || s.label === "子 agent 内部消息"));
 });
 
 check("有分叉的会话用 git-branch 图标区分", () => {
@@ -94,6 +138,7 @@ check("有分叉的会话用 git-branch 图标区分", () => {
 
 // ---- 打开 webview ---------------------------------------------------------
 const targetItem = sessions.find(s => s.description.includes("分叉"));
+const codexItem = codexSessions[0];
 const targetFile = targetItem.resourceUri.fsPath;
 const targetConversationId = targetItem.command.arguments[0];
 const outsideFile = path.join(testConfigDir,
@@ -302,7 +347,7 @@ setTimeout(async () => {
     assert.strictEqual(conversations.length, 2);
     const merged = conversations.find(item => item._conversation.id === data.id);
     assert.ok(merged, "刷新后丢失原对话标识");
-    assert.ok(merged.description.includes("4 个分支会话"), merged.description);
+    assert.ok(merged.description.includes("4 个分支"), merged.description);
     assert.strictEqual(calls.messages.at(-1).session.sessionCount, 4);
   });
 
@@ -311,16 +356,66 @@ setTimeout(async () => {
   check("拒绝 Webview 请求不存在的轮次", () =>
     assert.strictEqual(calls.terminals.length, terminalCount));
 
+  // ---- Codex 解析、精确分支与继续 ---------------------------------------
+  calls.registeredCommands.get("claudeGraph.open")(codexItem.command.arguments[0]);
+  const codexData = calls.messages.at(-1).session;
+  check("Codex fork 谱系合并成一个三轮分支图", () => {
+    assert.strictEqual(codexData.provider, "codex");
+    assert.strictEqual(codexData.providerLabel, "Codex");
+    assert.strictEqual(codexData.sessionCount, 2);
+    assert.strictEqual(codexData.turns.length, 3);
+    assert.ok(codexData.turns.some(t => t.body === "改用 OAuth"));
+    assert.ok(codexData.turns.some(t => t.body === "改用 Passkey"));
+    assert.ok(codexData.turns.every(t => t.sourceThreadId && t.sourceFile));
+    const counts = new Map();
+    for (const turn of codexData.turns) if (turn.parent)
+      counts.set(turn.parent, (counts.get(turn.parent) || 0) + 1);
+    assert.ok([...counts.values()].some(value => value === 2));
+  });
+
+  const codexForkPoint = codexData.turns.find(turn =>
+    codexData.turns.filter(candidate => candidate.parent === turn.id).length === 2);
+  calls.inputBoxResponses.push("codex-passkey");
+  await calls.panels[0]._onMessage({ type: "forkTurn", turnId: codexForkPoint.id });
+  check("Codex 历史节点通过 app-server lastTurnId 精确创建分支", () => {
+    assert.strictEqual(codexForkCalls.length, 1);
+    assert.strictEqual(codexForkCalls[0].threadId, codexForkPoint.sourceThreadId);
+    assert.strictEqual(codexForkCalls[0].lastTurnId, codexForkPoint.id);
+    assert.strictEqual(codexForkCalls[0].cwd, "/tmp");
+    assert.strictEqual(codexForkCalls[0].name, "codex-passkey");
+    const term = calls.terminals.at(-1);
+    assert.strictEqual(term.options.shellPath, "codex");
+    assert.strictEqual(term.options.cwd, "/tmp");
+    assert.deepStrictEqual(term.options.shellArgs,
+      ["resume", "99999999-9999-7999-8999-999999999999"]);
+    assert.ok(term.shown);
+  });
+
+  const codexTip = codexData.turns.find(turn => turn.body === "改用 Passkey");
+  await calls.panels[0]._onMessage({ type: "resumeTurn", turnId: codexTip.id });
+  check("Codex 分支尖端直接恢复原 thread", () => {
+    assert.strictEqual(codexForkCalls.length, 1, "继续尖端不应额外创建 fork");
+    const term = calls.terminals.at(-1);
+    assert.deepStrictEqual(term.options.shellArgs, ["resume", codexTip.sourceThreadId]);
+    assert.strictEqual(term.options.shellPath, "codex");
+  });
+
   const activePanel = calls.panels[0];
   vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file("/other") }];
   calls.onWorkspaceFolders({});
   const switchedProjects = tree.getChildren();
-  check("切换工作区后只列出新目录的会话", () => {
+  const switchedCodexProjects = codexTree.getChildren();
+  check("切换工作区后两个 View 仍各自只列新目录会话", () => {
     assert.strictEqual(switchedProjects.length, 1);
+    assert.strictEqual(switchedCodexProjects.length, 1);
     assert.strictEqual(switchedProjects[0].label, "other");
-    const switchedSessions = tree.getChildren(switchedProjects[0]);
-    assert.strictEqual(switchedSessions.length, 1);
-    assert.strictEqual(switchedSessions[0].resourceUri.fsPath, outsideFile);
+    assert.strictEqual(switchedCodexProjects[0].label, "other");
+    const switchedClaudeSessions = tree.getChildren(switchedProjects[0]);
+    const switchedCodexSessions = codexTree.getChildren(switchedCodexProjects[0]);
+    assert.strictEqual(switchedClaudeSessions.length, 1);
+    assert.strictEqual(switchedCodexSessions.length, 1);
+    assert.strictEqual(switchedClaudeSessions[0].resourceUri.fsPath, outsideFile);
+    assert.ok(switchedCodexSessions[0]._conversation.provider === "codex");
   });
   check("切换工作区后关闭旧目录的图面板", () =>
     assert.strictEqual(activePanel.disposed, true));

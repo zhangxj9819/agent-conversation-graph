@@ -1,0 +1,4 @@
+{"timestamp":"2026-08-14T06:41:51.827Z","type":"session_meta","payload":{"session_id":"99999999-9999-7999-8999-999999999999","id":"99999999-9999-7999-8999-999999999999","forked_from_id":"55555555-5555-7555-8555-555555555555","timestamp":"2026-08-14T06:41:51.797Z","cwd":"/tmp","originator":"codex-tui","source":"vscode","model_provider":"openai"}}
+{"timestamp":"2026-08-14T06:41:51.827Z","type":"event_msg","payload":{"type":"task_started","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","started_at":1786678801}}
+{"timestamp":"2026-08-14T06:41:51.827Z","type":"response_item","payload":{"type":"message","id":"msg-user-a","role":"user","content":[{"type":"input_text","text":"设计登录方案"}]}}
+{"timestamp":"2026-08-14T06:41:51.827Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa"}}

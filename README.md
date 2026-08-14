@@ -1,8 +1,9 @@
-# claude-graph
+# Conversation Graph
 
-把 Claude Code 的对话历史渲染成 **git-graph 风格的分支图**。
+把 AI 编程代理的对话历史渲染成 **git-graph 风格的分支图**。Python 单文件导出器支持
+Claude Code；VS Code 插件同时支持 Claude Code 与 OpenAI Codex。
 
-对话记录里每条消息都带 `uuid` / `parentUuid`，本身就是一棵树。当你回退到某条历史
+Claude 对话记录里每条消息都带 `uuid` / `parentUuid`，本身就是一棵树。当你回退到某条历史
 消息重新提问（`Esc Esc` 或编辑历史输入），就会从那个节点分出新的孩子 —— 结构上和
 git 的分叉完全同构。这个工具把它画出来。
 
@@ -19,8 +20,10 @@ git 的分叉完全同构。这个工具把它画出来。
 ● 4894eef  什么问题 Rc files read: NONE Latexmk…                     HEAD
 ```
 
-两种用法：**生成单文件 HTML**，或者装成 **VS Code 插件**（见
-[`vscode-claude-graph/`](vscode-claude-graph/README.md)，能跟着对话实时刷新）。
+两种用法：为 Claude 生成**单文件 HTML**，或者安装
+**Claude / Codex VS Code 插件**（见 [`vscode-claude-graph/`](vscode-claude-graph/README.md)，
+在同一个活动栏容器中提供 Claude 与 Codex 两个独立视图，并跟着各自 CLI 的对话实时刷新、
+创建分支）。
 
 ## 用法
 
@@ -49,13 +52,14 @@ python3 claude_graph.py --all -o graph.html       # 全部项目
 - `j` / `k` 或方向键上下移动，搜索框过滤提问内容
 - URL 形如 `#1fce10c5/d42b0ea`，可以直接分享到某一轮
 - 右上角 ◐ 在 浅色 / 深色 / 跟随系统 之间切换
-- VS Code 插件只显示当前工作区对应的对话；共享根消息 UUID 的多个分支 session 会合并为
-  一个对话标识。可从任意轮次创建新的 Claude 对话分支，也可在分支尖端继续该分支
+- VS Code 插件只显示当前工作区对应的对话；Claude 以根消息 UUID、Codex 以
+  `forked_from_id` 谱系合并，多个分支只占一个对话标识。Claude 与 Codex 是同一活动栏
+  容器中的两个独立可折叠视图，不会混在同一棵会话树中；两者都可从任意轮次创建分支
 
 默认只显示真实提问；勾选「显示命令与系统事件」可以放出 `/model`、`/compact`、
 子任务通知、用户打断等记录。
 
-### 创建与切换 Claude 分支（VS Code 插件）
+### 创建与切换 Claude / Codex 分支（VS Code 插件）
 
 点开一个图节点后，详情面板会提供：
 
@@ -67,6 +71,12 @@ Claude Code 2.1.231 的 `/branch` / `--fork-session` 只能从当前叶子分支
 历史 UUID。扩展会在原会话旁新增一份只含所选祖先链的 JSONL，再恢复这个独立 session；
 原会话不会被修改或删除。这些操作只改变 Claude 对话上下文，**不会切换 Git 分支或回滚
 文件**。如果扩展宿主找不到 `claude`，可在设置中为 `claudeGraph.claudeCommand` 填写绝对路径。
+
+Codex 对话读取 `~/.codex/sessions/**/*.jsonl`，排除子 agent，并把 fork rollout 合并为轮次
+树。创建历史分支时使用 Codex app-server 的稳定
+`thread/fork({ threadId, lastTurnId })` 接口；继续尖端时运行 `codex resume <thread>`。
+插件不手工改写 Codex rollout。如果找不到 `codex`，可设置 `claudeGraph.codexCommand`。
+所有操作同样不会切换 Git 分支或回滚工作区文件。
 
 ## 实现要点
 
@@ -132,7 +142,7 @@ claude_graph.py        .jsonl → 轮次树 → 单文件 HTML（只用标准库
 viewer_template.html   查看器模板，生成时注入 layout.js 与数据
 layout.js              轮次树 → 泳道布局。纯函数、不碰 DOM
 test_layout.mjs        拿真实数据跑 layout.js 的不变量测试
-vscode-claude-graph/   VS Code 插件
+vscode-claude-graph/   Claude / Codex VS Code 插件
 ```
 
 `layout.js` 是**单一来源**：`claude_graph.py` 生成 HTML 时把它注入模板，插件的 webview
@@ -144,7 +154,7 @@ vscode-claude-graph/   VS Code 插件
 ```bash
 python3 claude_graph.py --all      # 先生成数据
 node test_layout.mjs               # 布局不变量
-cd vscode-claude-graph && npm test # 插件 37 项检查
+cd vscode-claude-graph && npm test # 插件 44 项检查
 ```
 
 布局算法用真实数据做了不变量测试（覆盖两种过滤模式 × 47 个会话）：

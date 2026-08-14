@@ -1,0 +1,4 @@
+{"timestamp":"2026-08-14T02:00:00.000Z","type":"session_meta","payload":{"session_id":"77777777-7777-7777-8777-777777777777","id":"77777777-7777-7777-8777-777777777777","timestamp":"2026-08-14T02:00:00.000Z","cwd":"/other","originator":"codex-tui","cli_version":"0.147.0","source":"cli","thread_source":"user","model_provider":"openai"}}
+{"timestamp":"2026-08-14T02:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"dddddddd-dddd-7ddd-8ddd-dddddddddddd"}}
+{"timestamp":"2026-08-14T02:00:01.100Z","type":"turn_context","payload":{"turn_id":"dddddddd-dddd-7ddd-8ddd-dddddddddddd","cwd":"/other","model":"gpt-5.6"}}
+{"timestamp":"2026-08-14T02:00:01.200Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"dddddddd-dddd-7ddd-8ddd-dddddddddddd","item":{"type":"UserMessage","id":"item-user-d","content":[{"type":"text","text":"其他项目"}]}}}

@@ -23,7 +23,7 @@ const isVisible = t => state.showNoise || t.kind === "prompt" || t.kind === "com
 function renderGraph() {
   const center = document.getElementById("center");
   if (!state.session) {
-    center.innerHTML = `<div class="empty center-empty">从左侧「Claude 对话分支图」里选一个会话。</div>`;
+    center.innerHTML = `<div class="empty center-empty">从左侧「对话分支图」里选一个会话。</div>`;
     view = null;
     return;
   }
@@ -134,8 +134,10 @@ function renderDetail() {
   const parent = t.parent && view.byId.has(t.parent) ? view.byId.get(t.parent) : null;
   const sibs = parent ? (view.kids.get(parent.id) || []) : (view.roots.length > 1 ? view.roots : []);
   const ref = view.refs.get(t.id);
+  const isCodex = state.session.provider === "codex";
 
   const kv = [
+    ["来源", state.session.providerLabel || (isCodex ? "Codex" : "Claude Code")],
     ["时间", fmtTime(t.ts)],
     ["父节点", parent ? `${parent.short} ${parent.title.slice(0, 22)}` : "（根）"],
     ["git 分支", t.gitBranch || "—"],
@@ -160,11 +162,16 @@ function renderDetail() {
       ref ? " · " + esc(ref) : ""}</div>
     <dl class="kv">${kv}</dl>
     <div class="turn-actions">
-      <button class="action primary" id="fork-turn">从此轮创建分支</button>
+      <button class="action primary" id="fork-turn">从此轮创建${isCodex ? " Codex" : " Claude"} 分支</button>
       ${ref ? `<button class="action" id="resume-turn">${
-        ref === "HEAD" ? "从此尖端继续（新会话）" : `从 ${esc(ref)} 继续（新会话）`}</button>` : ""}
+        isCodex
+          ? (ref === "HEAD" ? "继续此 Codex 分支" : `继续 ${esc(ref)} Codex 分支`)
+          : (ref === "HEAD" ? "从此尖端继续（新会话）" : `从 ${esc(ref)} 继续（新会话）`)
+      }</button>` : ""}
     </div>
-    <div class="action-note">两项操作都会精确复制截至所选轮次的对话并在新终端打开；原会话不变。
+    <div class="action-note">${isCodex
+      ? "创建分支会通过 Codex 官方接口精确复制截至所选轮次的历史；继续会打开现有分支尖端。"
+      : "两项操作都会精确复制截至所选轮次的对话并在新终端打开；原会话不变。"}
       只处理对话上下文，不会切换 Git 分支或回滚文件。</div>
     ${branchList(view.kids.get(t.id) || [], t.id,
       `从这里分出 ${(view.kids.get(t.id) || []).length} 条 —— 你在这一轮之后回退改写`)}
@@ -221,8 +228,9 @@ window.addEventListener("message", ev => {
 
   // VS Code 会在 webview 隐藏后销毁重建，扩展随即重投一次数据。那不是「切换会话」，
   // 不能借机清掉恢复出来的选中 —— 否则用户每次切回标签页都会丢失当前位置。
-  const prevId = state.session ? state.session.id : null;
-  const switching = prevId !== null && prevId !== msg.session.id;
+  const prevId = state.session ? (state.session.key || `${state.session.provider}:${state.session.id}`) : null;
+  const nextId = msg.session.key || `${msg.session.provider}:${msg.session.id}`;
+  const switching = prevId !== null && prevId !== nextId;
   state.session = msg.session;
 
   if (switching) state.selected = null;
@@ -235,7 +243,8 @@ window.addEventListener("message", ev => {
     state.selected = null;
   }
 
-  document.getElementById("hdr-title").textContent = msg.session.title.slice(0, 44);
+  document.getElementById("hdr-title").textContent =
+    `${msg.session.providerLabel || ""} · ${msg.session.title}`.replace(/^ · /, "").slice(0, 52);
   save();
   render();
 });

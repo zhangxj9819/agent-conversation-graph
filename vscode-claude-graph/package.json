@@ -1,8 +1,8 @@
 {
   "name": "claude-conversation-graph",
-  "displayName": "Claude 对话分支图",
-  "description": "把 Claude Code 的对话历史渲染成 git-graph 风格的分支图，回退改写一目了然。",
-  "version": "0.2.3",
+  "displayName": "Claude / Codex 对话分支图",
+  "description": "把 Claude Code 与 Codex 对话历史渲染成 git-graph 风格的分支图，并从任意轮次创建分支。",
+  "version": "0.3.2",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -15,6 +15,8 @@
   "keywords": [
     "claude",
     "claude code",
+    "codex",
+    "openai",
     "conversation",
     "graph",
     "git-graph"
@@ -25,7 +27,7 @@
       "activitybar": [
         {
           "id": "claudeGraph",
-          "title": "Claude 对话分支图",
+          "title": "对话分支图",
           "icon": "media/icon.svg"
         }
       ]
@@ -34,40 +36,61 @@
       "claudeGraph": [
         {
           "id": "claudeGraph.sessions",
-          "name": "会话",
+          "name": "Claude Code 会话",
           "icon": "media/icon.svg"
+        },
+        {
+          "id": "codexGraph.sessions",
+          "name": "Codex 会话",
+          "icon": "media/codex-icon.svg"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "claudeGraph.sessions",
-        "contents": "当前工作区没有 Claude Code 对话记录。\n先在这个目录中启动 Claude Code 并进行对话。\n[重新扫描](command:claudeGraph.refresh)"
+        "contents": "当前工作区没有 Claude Code 对话记录。\n先在这个目录中启动 Claude Code 并进行对话。\n[重新扫描 Claude 会话](command:claudeGraph.refresh)"
+      },
+      {
+        "view": "codexGraph.sessions",
+        "contents": "当前工作区没有 Codex 对话记录。\n先在这个目录中启动 Codex 并进行对话。\n[重新扫描 Codex 会话](command:codexGraph.refresh)"
       }
     ],
     "commands": [
       {
         "command": "claudeGraph.open",
         "title": "打开分支图",
-        "category": "Claude 分支图",
+        "category": "对话分支图",
         "icon": "$(git-branch)"
       },
       {
         "command": "claudeGraph.openCurrent",
-        "title": "打开当前工作区最近的会话",
+        "title": "打开当前工作区最近的 Claude 会话",
         "category": "Claude 分支图",
         "icon": "$(git-branch)"
       },
       {
         "command": "claudeGraph.refresh",
-        "title": "重新扫描会话",
+        "title": "重新扫描 Claude 会话",
         "category": "Claude 分支图",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "codexGraph.openCurrent",
+        "title": "打开当前工作区最近的 Codex 会话",
+        "category": "Codex 分支图",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "codexGraph.refresh",
+        "title": "重新扫描 Codex 会话",
+        "category": "Codex 分支图",
         "icon": "$(refresh)"
       },
       {
         "command": "claudeGraph.revealFile",
         "title": "在编辑器中打开 .jsonl 原始记录",
-        "category": "Claude 分支图",
+        "category": "对话分支图",
         "icon": "$(go-to-file)"
       }
     ],
@@ -77,12 +100,22 @@
           "command": "claudeGraph.refresh",
           "when": "view == claudeGraph.sessions",
           "group": "navigation"
+        },
+        {
+          "command": "codexGraph.refresh",
+          "when": "view == codexGraph.sessions",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "claudeGraph.revealFile",
           "when": "view == claudeGraph.sessions && viewItem == session",
+          "group": "inline"
+        },
+        {
+          "command": "claudeGraph.revealFile",
+          "when": "view == codexGraph.sessions && viewItem == session",
           "group": "inline"
         }
       ],
@@ -98,7 +131,7 @@
       ]
     },
     "configuration": {
-      "title": "Claude 对话分支图",
+      "title": "Claude / Codex 对话分支图",
       "properties": {
         "claudeGraph.maxChars": {
           "type": "number",
@@ -126,11 +159,16 @@
           "type": "string",
           "default": "claude",
           "description": "创建或切换对话分支时启动的 Claude Code 可执行文件。若扩展宿主的 PATH 找不到 claude，请填写绝对路径。"
+        },
+        "claudeGraph.codexCommand": {
+          "type": "string",
+          "default": "codex",
+          "description": "创建或继续 Codex 分支时启动的 Codex CLI 可执行文件。若扩展宿主的 PATH 找不到 codex，请填写绝对路径。"
         }
       }
     }
   },
   "scripts": {
-    "test": "node test/smoke.js && node test/webview.js"
+    "test": "node test/codex-app-server.js && node test/smoke.js && node test/webview.js"
   }
 }

@@ -1,0 +1,18 @@
+{"timestamp":"2026-08-14T01:00:00.000Z","type":"session_meta","payload":{"session_id":"55555555-5555-7555-8555-555555555555","id":"55555555-5555-7555-8555-555555555555","timestamp":"2026-08-14T01:00:00.000Z","cwd":"/tmp","originator":"codex-tui","cli_version":"0.147.0","source":"cli","thread_source":"user","model_provider":"openai"}}
+{"timestamp":"2026-08-14T01:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","started_at":1786678801}}
+{"timestamp":"2026-08-14T01:00:01.100Z","type":"turn_context","payload":{"turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","cwd":"/tmp","model":"gpt-5.6"}}
+{"timestamp":"2026-08-14T01:00:01.150Z","type":"response_item","payload":{"type":"message","id":"msg-user-a","role":"user","content":[{"type":"input_text","text":"设计登录方案"}]}}
+{"timestamp":"2026-08-14T01:00:01.200Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","item":{"type":"UserMessage","id":"item-user-a","content":[{"type":"text","text":"设计登录方案"}]}}}
+{"timestamp":"2026-08-14T01:00:02.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","item":{"type":"Reasoning","id":"item-reason-a","summary_text":["比较安全性与兼容性"]}}}
+{"timestamp":"2026-08-14T01:00:03.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa","item":{"type":"AgentMessage","id":"item-agent-a","content":[{"type":"Text","text":"先使用标准 OAuth 流程。"}],"phase":"final"}}}
+{"timestamp":"2026-08-14T01:00:03.050Z","type":"response_item","payload":{"type":"message","id":"msg-agent-a","role":"assistant","content":[{"type":"output_text","text":"先使用标准 OAuth 流程。"}],"phase":"final"}}
+{"timestamp":"2026-08-14T01:00:03.100Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"output_tokens":12}}}}
+{"timestamp":"2026-08-14T01:00:04.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa"}}
+{"timestamp":"2026-08-14T01:05:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb","started_at":1786679101}}
+{"timestamp":"2026-08-14T01:05:01.100Z","type":"turn_context","payload":{"turn_id":"bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb","cwd":"/tmp","model":"gpt-5.6"}}
+{"timestamp":"2026-08-14T01:05:01.150Z","type":"response_item","payload":{"type":"message","id":"msg-user-b","role":"user","content":[{"type":"input_text","text":"改用 OAuth"}]}}
+{"timestamp":"2026-08-14T01:05:01.200Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb","item":{"type":"UserMessage","id":"item-user-b","content":[{"type":"text","text":"改用 OAuth"}]}}}
+{"timestamp":"2026-08-14T01:05:02.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb","item":{"type":"CommandExecution","id":"item-command-b","command":"npm test","cwd":"/tmp","status":"completed","aggregated_output":"全部通过","exit_code":0}}}
+{"timestamp":"2026-08-14T01:05:03.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb","item":{"type":"AgentMessage","id":"item-agent-b","content":[{"type":"Text","text":"OAuth 方案已经验证。"}],"phase":"final"}}}
+{"timestamp":"2026-08-14T01:05:03.050Z","type":"response_item","payload":{"type":"message","id":"msg-agent-b","role":"assistant","content":[{"type":"output_text","text":"OAuth 方案已经验证。"}],"phase":"final"}}
+{"timestamp":"2026-08-14T01:05:04.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb"}}

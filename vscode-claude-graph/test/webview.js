@@ -16,6 +16,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 process.env.CLAUDE_CONFIG_DIR = path.resolve(__dirname, "fixtures");
+process.env.CODEX_HOME = path.resolve(__dirname, "fixtures/codex");
 
 const CHROME_CANDIDATES = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -155,7 +156,7 @@ check("详情面板渲染了助手动作", () => {
 });
 
 check("详情面板提供从轮次创建分支的操作", () => {
-  assert.ok(dom.includes("从此轮创建分支"), "缺少创建分支按钮");
+  assert.ok(/从此轮创建(?: Claude| Codex) 分支/.test(dom), "缺少创建分支按钮");
 });
 
 check("分支按钮向扩展发送受限的轮次 ID", () => {
