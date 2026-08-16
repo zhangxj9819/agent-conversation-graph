@@ -64,15 +64,30 @@ function plainText(blocks) {
     .trim();
 }
 
+/** Claude 可能把手动压缩先写成一条无标签的普通 user 消息。 */
+function isPlainCompactCommand(text) {
+  return /^\/compact(?:\s|$)/i.test(String(text || "").replace(ANSI_RE, "").trim());
+}
+
+function isCompactSummary(rec, text) {
+  return Boolean(rec?.isCompactSummary) ||
+    String(text || "").trim().startsWith(
+      "This session is being continued from a previous conversation");
+}
+
 /** 返回 [kind, title]。kind 决定这一轮在图上的样子和默认是否可见。 */
 function classifyPrompt(text, rec) {
   const s = text.trim();
 
   if (INTERRUPT_RE.test(s)) return ["system-event", "⎋ 用户打断"];
 
-  if (rec.isCompactSummary ||
-      s.startsWith("This session is being continued from a previous conversation"))
+  if (isCompactSummary(rec, s))
     return ["compact", "／compact 上下文压缩续接"];
+
+  // 与带 <command-name> 标签的回显一样，它是本地控制命令而不是真实用户提问。
+  if (isPlainCompactCommand(s)) {
+    return ["command", cut(s.replace(/\s+/g, " "), 160)];
+  }
 
   const cmd = s.match(/<command-name>\s*([\s\S]*?)\s*<\/command-name>/);
   if (cmd) {
@@ -179,6 +194,44 @@ function buildTurns(records, maxChars, maxPrompt) {
   const anchors = new Set();
   for (const [uuid, rec] of byUuid) if (isAnchor(rec)) anchors.add(uuid);
 
+  /*
+   * 手动 /compact 在新版 Claude Code JSONL 里有两条并行的物理路径：
+   *
+   *   previous message -> plain "/compact"
+   *   previous message -> compact_boundary -> compact summary
+   *
+   * boundary.logicalParentUuid 指向的是 /compact 之前的消息，所以单纯沿逻辑父链
+   * 会把命令和摘要画成兄弟分支。这里把共享同一逻辑父节点、且出现在 boundary
+   * 之前的最后一条纯文本 /compact 配对为摘要的语义父节点。默认视图隐藏 command
+   * 后会收缩成一个 compact 节点；显示系统事件时也仍是一条直线。
+   */
+  const recordOrder = new Map();
+  records.forEach((rec, index) => {
+    if (rec?.uuid) recordOrder.set(rec.uuid, index);
+  });
+  const compactCommandsByParent = new Map();
+  for (const anchor of anchors) {
+    const rec = byUuid.get(anchor);
+    if (!isPlainCompactCommand(plainText(msgBlocks(rec)))) continue;
+    const parent = lineageParentUuid(rec);
+    if (!compactCommandsByParent.has(parent)) compactCommandsByParent.set(parent, []);
+    compactCommandsByParent.get(parent).push(anchor);
+  }
+  const compactCommandForSummary = new Map();
+  for (const anchor of anchors) {
+    const rec = byUuid.get(anchor);
+    const raw = plainText(msgBlocks(rec));
+    if (!isCompactSummary(rec, raw)) continue;
+    const boundary = byUuid.get(rec.parentUuid);
+    if (boundary?.type !== "system" || boundary.subtype !== "compact_boundary") continue;
+    const logicalParent = lineageParentUuid(boundary);
+    const summaryOrder = recordOrder.get(anchor) ?? Number.MAX_SAFE_INTEGER;
+    const candidates = (compactCommandsByParent.get(logicalParent) || [])
+      .filter(uuid => (recordOrder.get(uuid) ?? Number.MAX_SAFE_INTEGER) < summaryOrder)
+      .sort((a, b) => (recordOrder.get(b) ?? -1) - (recordOrder.get(a) ?? -1));
+    if (candidates.length) compactCommandForSummary.set(anchor, candidates[0]);
+  }
+
   const nearestAnchorAbove = uuid => {
     let p = lineageParentUuid(byUuid.get(uuid));
     const seen = new Set();
@@ -268,7 +321,7 @@ function buildTurns(records, maxChars, maxPrompt) {
     turns.push({
       id: anchor,
       short: anchor.slice(0, 7),
-      parent: nearestAnchorAbove(anchor),
+      parent: compactCommandForSummary.get(anchor) || nearestAnchorAbove(anchor),
       resumeAt,
       ts: rec.timestamp || "",
       kind,

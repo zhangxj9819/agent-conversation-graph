@@ -13,6 +13,7 @@ const { contract, layout } = require("../media/layout");
 const ids = {
   prompt1: "11111111-1111-4111-8111-111111111111",
   answer1: "22222222-2222-4222-8222-222222222222",
+  compactCommand: "aaaaaaaa-1111-4111-8111-111111111111",
   boundary: "33333333-3333-4333-8333-333333333333",
   summary: "44444444-4444-4444-8444-444444444444",
   answer2: "55555555-5555-4555-8555-555555555555",
@@ -43,6 +44,8 @@ const assistant = (uuid, parentUuid, timestamp, text) => ({
 const compactRecords = [
   user(ids.prompt1, null, "2026-08-16T00:00:00.000Z", "压缩前的问题"),
   assistant(ids.answer1, ids.prompt1, "2026-08-16T00:00:01.000Z", "压缩前的回答"),
+  // 真实记录会先写一条无标签的 /compact；boundary 与它共享同一个物理父节点。
+  user(ids.compactCommand, ids.answer1, "2026-08-16T00:00:01.500Z", "/compact"),
   {
     ...base(ids.boundary, null, "system", "2026-08-16T00:00:02.000Z"),
     subtype: "compact_boundary",
@@ -68,11 +71,13 @@ function check(name, fn) {
   }
 }
 
-check("/compact 摘要沿 logicalParentUuid 接回压缩前轮次", () => {
+check("纯文本 /compact 与压缩摘要合并为线性语义父链", () => {
   const turns = buildTurns(compactRecords, 2000, 20000);
   const byId = new Map(turns.map(turn => [turn.id, turn]));
+  assert.strictEqual(byId.get(ids.compactCommand).kind, "command");
   assert.strictEqual(byId.get(ids.summary).kind, "compact");
-  assert.strictEqual(byId.get(ids.summary).parent, ids.prompt1);
+  assert.strictEqual(byId.get(ids.compactCommand).parent, ids.prompt1);
+  assert.strictEqual(byId.get(ids.summary).parent, ids.compactCommand);
   assert.strictEqual(byId.get(ids.prompt2).parent, ids.summary);
   assert.deepStrictEqual(turns.filter(turn => !turn.parent).map(turn => turn.id), [ids.prompt1]);
 });
@@ -80,11 +85,18 @@ check("/compact 摘要沿 logicalParentUuid 接回压缩前轮次", () => {
 check("压缩前后在默认视图中保持单泳道且不产生伪 tip", () => {
   const turns = buildTurns(compactRecords, 2000, 20000);
   const visible = turn => turn.kind === "prompt" || turn.kind === "compact";
-  const view = layout(contract(turns, visible));
+  const contracted = contract(turns, visible);
+  const summary = contracted.find(turn => turn.id === ids.summary);
+  assert.strictEqual(summary.parent, ids.prompt1, "隐藏 /compact 后摘要没有接回主线");
+  const view = layout(contracted);
   assert.deepStrictEqual(view.roots, [ids.prompt1]);
   assert.strictEqual(view.maxLane, 0);
   assert.strictEqual(view.forks.size, 0);
   assert.deepStrictEqual([...view.refs.values()], ["HEAD"]);
+
+  const noisyView = layout(turns);
+  assert.strictEqual(noisyView.maxLane, 0, "显示命令时不应出现 /compact 侧枝");
+  assert.strictEqual(noisyView.forks.size, 0, "显示命令时不应出现 /compact 假分叉");
 });
 
 const recordsWithUnrelatedBranch = [
@@ -100,6 +112,7 @@ check("压缩后节点的祖先链包含压缩前历史且排除真实旁支", (
     ids.prompt1, ids.answer1, ids.boundary, ids.summary,
     ids.answer2, ids.prompt2, ids.answer3,
   ]) assert.ok(ancestors.has(id), `祖先链缺少 ${id}`);
+  assert.ok(!ancestors.has(ids.compactCommand), "/compact 控制命令不应进入模型历史祖先链");
   assert.ok(!ancestors.has(ids.otherPrompt));
   assert.ok(!ancestors.has(ids.otherAnswer));
 });
