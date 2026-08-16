@@ -132,6 +132,18 @@ def is_anchor(rec: dict) -> bool:
     return bool(plain_text(blocks))
 
 
+def lineage_parent_uuid(rec: dict) -> str | None:
+    """Return the parent used for conversation lineage and graph layout."""
+    if (
+        rec.get("type") == "system"
+        and rec.get("subtype") == "compact_boundary"
+        and isinstance(rec.get("logicalParentUuid"), str)
+        and rec["logicalParentUuid"]
+    ):
+        return rec["logicalParentUuid"]
+    return rec.get("parentUuid")
+
+
 def truncate(s: str, limit: int) -> tuple[str, bool]:
     if s is None:
         return "", False
@@ -170,21 +182,22 @@ def build_turns(records: list[dict], max_chars: int, max_prompt: int) -> dict:
         if u and not rec.get("isSidechain"):
             by_uuid[u] = rec
 
-    # 子代表：注意要包含 system / attachment 等类型，parentUuid 链会穿过它们
+    # 子代表：注意要包含 system / attachment 等类型；compact_boundary 需要沿
+    # logicalParentUuid 跨过压缩断点，否则压缩后的轮次会被误判成新根节点。
     children: dict[str | None, list[str]] = defaultdict(list)
     for u, rec in by_uuid.items():
-        children[rec.get("parentUuid")].append(u)
+        children[lineage_parent_uuid(rec)].append(u)
     for lst in children.values():
         lst.sort(key=lambda u: (by_uuid[u].get("timestamp") or "", u))
 
     anchors = {u for u, rec in by_uuid.items() if is_anchor(rec)}
 
     def nearest_anchor_above(u: str) -> str | None:
-        p = by_uuid[u].get("parentUuid")
+        p = lineage_parent_uuid(by_uuid[u])
         seen = set()
         while p and p in by_uuid and p not in anchors and p not in seen:
             seen.add(p)
-            p = by_uuid[p].get("parentUuid")
+            p = lineage_parent_uuid(by_uuid[p])
         return p if p in anchors else None
 
     # 子 agent（sidechain）按发起它的 tool_use 归属到某一轮

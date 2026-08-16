@@ -11,6 +11,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { lineageParentUuid } = require("./parser");
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -43,11 +44,11 @@ function ancestorUuids(records, targetUuid) {
   const ancestors = new Set();
   let current = targetUuid;
   while (current) {
-    if (ancestors.has(current)) throw new Error("会话 parentUuid 链存在循环");
+    if (ancestors.has(current)) throw new Error("会话父链存在循环");
     const rec = byUuid.get(current);
-    if (!rec) throw new Error(`会话 parentUuid 链断裂：${current}`);
+    if (!rec) throw new Error(`会话父链断裂：${current}`);
     ancestors.add(current);
-    current = rec.parentUuid || null;
+    current = lineageParentUuid(rec);
   }
   return ancestors;
 }

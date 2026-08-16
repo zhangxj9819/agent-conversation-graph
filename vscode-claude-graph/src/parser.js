@@ -105,6 +105,19 @@ function isAnchor(rec) {
 }
 
 /**
+ * Claude Code 2.1.232 会让 compact_boundary 的物理 parentUuid 为空，并用
+ * logicalParentUuid 指回压缩前的最后一条消息。构图与复制分支都必须沿这个逻辑父节点
+ * 跨过压缩断点；其他记录仍严格使用 parentUuid，不能把真实回退分支抹平。
+ */
+function lineageParentUuid(rec) {
+  if (rec?.type === "system" && rec.subtype === "compact_boundary" &&
+      typeof rec.logicalParentUuid === "string" && rec.logicalParentUuid) {
+    return rec.logicalParentUuid;
+  }
+  return rec?.parentUuid ?? null;
+}
+
+/**
  * 按 Unicode 码点截断，而不是 UTF-16 码元。
  * String.prototype.slice 数的是码元，文本里只要有一个星平面字符（emoji 等）就会
  * 比 Python 的 s[:n] 早切一位 —— 两个解析器的输出必须逐字节一致，这里不能图省事。
@@ -154,11 +167,11 @@ function buildTurns(records, maxChars, maxPrompt) {
     if (rec.uuid && !rec.isSidechain) byUuid.set(rec.uuid, rec);
   }
 
-  // 注意要包含 system / attachment 等类型：parentUuid 链会穿过它们，
-  // 漏掉就会断链，一堆轮次会假装成根节点。
+  // 注意要包含 system / attachment 等类型：父链会穿过它们；compact_boundary
+  // 还需要沿 logicalParentUuid 跨过压缩断点。漏掉就会断链，一堆轮次会假装成根节点。
   const children = new Map();
   for (const [uuid, rec] of byUuid) {
-    const p = rec.parentUuid ?? null;
+    const p = lineageParentUuid(rec);
     if (!children.has(p)) children.set(p, []);
     children.get(p).push(uuid);
   }
@@ -167,11 +180,11 @@ function buildTurns(records, maxChars, maxPrompt) {
   for (const [uuid, rec] of byUuid) if (isAnchor(rec)) anchors.add(uuid);
 
   const nearestAnchorAbove = uuid => {
-    let p = byUuid.get(uuid).parentUuid;
+    let p = lineageParentUuid(byUuid.get(uuid));
     const seen = new Set();
     while (p && byUuid.has(p) && !anchors.has(p) && !seen.has(p)) {
       seen.add(p);
-      p = byUuid.get(p).parentUuid;
+      p = lineageParentUuid(byUuid.get(p));
     }
     return anchors.has(p) ? p : null;
   };
@@ -495,4 +508,5 @@ module.exports = {
   listSessionFiles,
   readJsonl,
   buildTurns,
+  lineageParentUuid,
 };
