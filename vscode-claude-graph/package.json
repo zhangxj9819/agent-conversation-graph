@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zhangxj9819/claude-conversation-graph.git"
+    "url": "https://github.com/zhangxj9819/agent-conversation-graph.git"
   },
-  "homepage": "https://github.com/zhangxj9819/claude-conversation-graph#readme",
+  "homepage": "https://github.com/zhangxj9819/agent-conversation-graph#readme",
   "bugs": {
-    "url": "https://github.com/zhangxj9819/claude-conversation-graph/issues"
+    "url": "https://github.com/zhangxj9819/agent-conversation-graph/issues"
   },
   "icon": "media/marketplace-icon.png",
   "galleryBanner": {

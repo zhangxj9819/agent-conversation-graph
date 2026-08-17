@@ -44,8 +44,8 @@ code --install-extension adscaboli.claude-conversation-graph
 ### Python 单文件导出器
 
 ```bash
-git clone https://github.com/zhangxj9819/claude-conversation-graph.git
-cd claude-conversation-graph
+git clone https://github.com/zhangxj9819/agent-conversation-graph.git
+cd agent-conversation-graph
 python3 claude_graph.py --help
 ```
 

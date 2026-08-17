@@ -49,8 +49,8 @@ documented in this file.
 - Keep one conversation entry per session lineage and preserve branch tips.
 - Limit the sidebar to the current VS Code workspace.
 
-[0.5.0]: https://github.com/zhangxj9819/claude-conversation-graph/compare/5228625...HEAD
-[0.4.1]: https://github.com/zhangxj9819/claude-conversation-graph/compare/e173724...5228625
-[0.4.0]: https://github.com/zhangxj9819/claude-conversation-graph/compare/375251a...e173724
-[0.3.3]: https://github.com/zhangxj9819/claude-conversation-graph/compare/499e6b0...375251a
-[0.3.2]: https://github.com/zhangxj9819/claude-conversation-graph/compare/7ad1687...499e6b0
+[0.5.0]: https://github.com/zhangxj9819/agent-conversation-graph/compare/5228625...HEAD
+[0.4.1]: https://github.com/zhangxj9819/agent-conversation-graph/compare/e173724...5228625
+[0.4.0]: https://github.com/zhangxj9819/agent-conversation-graph/compare/375251a...e173724
+[0.3.3]: https://github.com/zhangxj9819/agent-conversation-graph/compare/499e6b0...375251a
+[0.3.2]: https://github.com/zhangxj9819/agent-conversation-graph/compare/7ad1687...499e6b0
