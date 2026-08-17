@@ -237,6 +237,9 @@ function webviewHtml(webview, extensionUri) {
     <span id="hdr-title">…</span>
     <span class="stats" id="stats"></span>
     <span class="spacer"></span>
+    <label class="branch-filter"><span>分支</span>
+      <select id="branch-filter" aria-label="筛选分支"><option value="">全部分支</option></select>
+    </label>
     <input type="search" id="q" placeholder="搜索提问内容…" autocomplete="off">
     <label class="chk"><input type="checkbox" id="f-noise"> 命令与系统事件</label>
   </header>

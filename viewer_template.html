@@ -97,6 +97,14 @@ input[type="search"] {
   border: 1px solid var(--border-2); border-radius: 5px; font: inherit;
 }
 input[type="search"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.branch-filter { display: flex; align-items: center; gap: 5px; color: var(--text-2); white-space: nowrap; }
+.branch-filter select {
+  max-width: 240px; padding: 4px 24px 4px 8px;
+  background: var(--surface-0); color: var(--text-1);
+  border: 1px solid var(--border-2); border-radius: 5px; font: inherit;
+}
+.branch-filter select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.branch-filter select:disabled { opacity: .6; }
 label.chk { display: flex; align-items: center; gap: 4px; color: var(--text-2); cursor: pointer; user-select: none; }
 button.tbtn {
   padding: 4px 9px; background: var(--surface-0); color: var(--text-2);
@@ -212,6 +220,9 @@ details.step pre { margin: 0; padding: 8px 10px; border-top: 1px solid var(--bor
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
   <div class="controls">
+    <label class="branch-filter"><span>分支</span>
+      <select id="branch-filter" aria-label="筛选分支"><option value="">全部分支</option></select>
+    </label>
     <input type="search" id="q" placeholder="搜索提问内容…" autocomplete="off">
     <label class="chk"><input type="checkbox" id="f-noise"> 显示命令与系统事件</label>
     <div class="legend">
@@ -234,7 +245,7 @@ const DATA = /*__DATA__*/null;
 const ROW_H = 34, LANE_W = 18, PAD_X = 14, NODE_R = 4.5;
 const LANE_VARS = ["var(--lane-1)", "var(--lane-2)", "var(--lane-3)", "var(--lane-4)"];
 
-const state = { session: null, selected: null, showNoise: false, query: "" };
+const state = { session: null, selected: null, showNoise: false, query: "", branch: "" };
 let view = null;   // 当前布局结果
 
 /** URL 形如 #<会话前8位>/<轮次前7位>，可以把某一轮直接分享出去。 */
@@ -269,13 +280,32 @@ function renderSidebar() {
   `).join("");
   el.querySelectorAll(".sess").forEach(n =>
     n.onclick = () => {
-      state.session = n.dataset.sess; state.selected = null;
+      state.session = n.dataset.sess; state.selected = null; state.branch = "";
       syncHash(); render();
       document.querySelector(".sess.on")?.scrollIntoView({ block: "nearest" });
     });
 }
 
 const isVisible = t => state.showNoise || t.kind === "prompt" || t.kind === "compact";
+
+function renderBranchFilter(allView) {
+  const picker = document.getElementById("branch-filter");
+  if (state.branch && !allView.refs.has(state.branch)) state.branch = "";
+
+  const branches = [...allView.refs.entries()].sort((a, b) => {
+    if (a[1] === "HEAD") return -1;
+    if (b[1] === "HEAD") return 1;
+    return a[1].localeCompare(b[1], undefined, { numeric: true });
+  });
+  picker.innerHTML = `<option value="">全部分支 (${branches.length})</option>` +
+    branches.map(([id, ref]) => {
+      const t = allView.byId.get(id);
+      return `<option value="${esc(id)}">${esc(ref)} · ${esc(t.title.slice(0, 48))}</option>`;
+    }).join("");
+  picker.value = state.branch;
+  picker.disabled = branches.length <= 1;
+  return state.branch ? allView.refs.get(state.branch) : null;
+}
 
 /** 侧栏要显示的轮数/分叉数，必须与图上当前过滤后的视图一致，否则两处数字对不上。 */
 function sessionStats(turns) {
@@ -297,12 +327,20 @@ function renderGraph() {
   const sess = findSession(state.session);
   if (!sess) { center.innerHTML = `<div class="empty">左侧选一个会话。</div>`; return; }
 
-  let turns = contract(sess.turns, isVisible);
-  if (!turns.length) {
+  const visibleTurns = contract(sess.turns, isVisible);
+  if (!visibleTurns.length) {
     center.innerHTML = `<div class="empty">这个会话没有可显示的轮次，勾选「显示命令与系统事件」试试。</div>`;
     view = null; return;
   }
+  const allView = layout(visibleTurns);
+  const selectedRef = renderBranchFilter(allView);
+  const turns = filterBranch(visibleTurns, state.branch);
   view = layout(turns);
+  if (state.branch && selectedRef) {
+    view.refs = new Map([[state.branch, selectedRef]]);
+    view.head = selectedRef === "HEAD" ? state.branch : allView.head;
+  }
+  if (state.selected && !view.byId.has(state.selected)) state.selected = null;
 
   const gw = PAD_X * 2 + view.maxLane * LANE_W;
   const h = view.order.length * ROW_H;
@@ -366,7 +404,7 @@ function renderGraph() {
   document.getElementById("stats").innerHTML =
     `<span><b>${view.order.length}</b> 轮</span>
      <span><b>${nForks}</b> 处分叉</span>
-     <span><b>${nLeaves}</b> 条分支</span>
+     <span><b>${state.branch ? `1/${allView.refs.size}` : nLeaves}</b> 条分支</span>
      <span><b>${view.maxLane + 1}</b> 泳道</span>`;
 }
 
@@ -444,8 +482,11 @@ function render() { renderSidebar(); renderGraph(); renderDetail(); }
 /* ---------------------------------------------------------------- 交互 */
 
 document.getElementById("q").oninput = e => { state.query = e.target.value; renderGraph(); };
+document.getElementById("branch-filter").onchange = e => {
+  state.branch = e.target.value; state.selected = null; render();
+};
 document.getElementById("f-noise").onchange = e => {
-  state.showNoise = e.target.checked; state.selected = null; render();
+  state.showNoise = e.target.checked; state.selected = null; state.branch = ""; render();
 };
 document.getElementById("theme").onclick = () => {
   const cur = document.documentElement.getAttribute("data-theme");
@@ -454,7 +495,7 @@ document.getElementById("theme").onclick = () => {
   else document.documentElement.removeAttribute("data-theme");
 };
 document.addEventListener("keydown", e => {
-  if (e.target.tagName === "INPUT" || !view) return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || !view) return;
   const i = view.order.indexOf(state.selected);
   if (e.key === "j" || e.key === "ArrowDown") {
     state.selected = view.order[Math.min(view.order.length - 1, i + 1)] || view.order[0];

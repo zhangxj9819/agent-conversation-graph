@@ -19,6 +19,24 @@ function contract(turns, visible) {
   return turns.filter(visible).map(t => ({ ...t, parent: lift(t.id) }));
 }
 
+/**
+ * 只保留某个分支尖端以及它的全部可见祖先。tipId 为空时表示显示全部分支；
+ * 若实时刷新后该尖端已经不存在，则安全回退到原始完整视图。
+ */
+function filterBranch(turns, tipId) {
+  if (!tipId) return turns;
+  const byId = new Map(turns.map(t => [t.id, t]));
+  if (!byId.has(tipId)) return turns;
+
+  const keep = new Set();
+  let id = tipId;
+  while (id && byId.has(id) && !keep.has(id)) {
+    keep.add(id);
+    id = byId.get(id).parent;
+  }
+  return turns.filter(t => keep.has(t.id));
+}
+
 function layout(turns) {
   const byId = new Map(turns.map(t => [t.id, t]));
   const kids = new Map();
@@ -99,4 +117,4 @@ function layout(turns) {
   return { turns, byId, kids, order, row, lane, maxLane, refs, forks, head, roots };
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { contract, layout };
+if (typeof module !== "undefined" && module.exports) module.exports = { contract, filterBranch, layout };

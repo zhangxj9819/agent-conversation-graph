@@ -47,6 +47,20 @@ input[type="search"] {
 input[type="search"]:focus {
   outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px;
 }
+.branch-filter {
+  display: flex; align-items: center; gap: 5px; opacity: .85; white-space: nowrap;
+}
+.branch-filter select {
+  max-width: 230px; padding: 3px 24px 3px 7px;
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, transparent));
+  border-radius: 3px; font: inherit;
+}
+.branch-filter select:focus {
+  outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px;
+}
+.branch-filter select:disabled { opacity: .6; }
 label.chk { display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; opacity: .85; }
 
 main { flex: 1 1 auto; display: flex; min-height: 0; }

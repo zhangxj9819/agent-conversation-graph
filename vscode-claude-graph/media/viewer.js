@@ -9,7 +9,7 @@ const vscodeApi = acquireVsCodeApi();
 const ROW_H = 34, LANE_W = 18, PAD_X = 14, NODE_R = 4.5;
 const LANE_VARS = ["var(--lane-1)", "var(--lane-2)", "var(--lane-3)", "var(--lane-4)"];
 
-const state = { session: null, selected: null, showNoise: false, query: "" };
+const state = { session: null, selected: null, showNoise: false, query: "", branch: "" };
 let view = null;
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
@@ -17,6 +17,25 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
 const laneColor = l => LANE_VARS[l % LANE_VARS.length];
 const fmtTime = ts => ts ? ts.slice(0, 16).replace("T", " ") : "";
 const isVisible = t => state.showNoise || t.kind === "prompt" || t.kind === "compact";
+
+function renderBranchFilter(allView) {
+  const picker = document.getElementById("branch-filter");
+  if (state.branch && !allView.refs.has(state.branch)) state.branch = "";
+
+  const branches = [...allView.refs.entries()].sort((a, b) => {
+    if (a[1] === "HEAD") return -1;
+    if (b[1] === "HEAD") return 1;
+    return a[1].localeCompare(b[1], undefined, { numeric: true });
+  });
+  picker.innerHTML = `<option value="">全部分支 (${branches.length})</option>` +
+    branches.map(([id, ref]) => {
+      const t = allView.byId.get(id);
+      return `<option value="${esc(id)}">${esc(ref)} · ${esc(t.title.slice(0, 48))}</option>`;
+    }).join("");
+  picker.value = state.branch;
+  picker.disabled = branches.length <= 1;
+  return state.branch ? allView.refs.get(state.branch) : null;
+}
 
 /* ---------------------------------------------------------------- 图 */
 
@@ -28,13 +47,22 @@ function renderGraph() {
     return;
   }
 
-  const turns = contract(state.session.turns, isVisible);
-  if (!turns.length) {
+  const visibleTurns = contract(state.session.turns, isVisible);
+  if (!visibleTurns.length) {
     center.innerHTML = `<div class="empty center-empty">这个会话没有可显示的轮次，勾选「命令与系统事件」试试。</div>`;
     view = null;
     return;
   }
+  const allView = layout(visibleTurns);
+  const selectedRef = renderBranchFilter(allView);
+  const turns = filterBranch(visibleTurns, state.branch);
   view = layout(turns);
+  if (state.branch && selectedRef) {
+    // 单分支布局会把唯一叶子重新命名为 HEAD；保留它在完整图中的真实 ref。
+    view.refs = new Map([[state.branch, selectedRef]]);
+    view.head = selectedRef === "HEAD" ? state.branch : allView.head;
+  }
+  if (state.selected && !view.byId.has(state.selected)) state.selected = null;
 
   const gw = PAD_X * 2 + view.maxLane * LANE_W;
   const h = view.order.length * ROW_H;
@@ -94,7 +122,7 @@ function renderGraph() {
   document.getElementById("stats").innerHTML =
     `<span><b>${view.order.length}</b> 轮</span>
      <span><b>${view.forks.size}</b> 处分叉</span>
-     <span><b>${view.refs.size}</b> 条分支</span>`;
+     <span><b>${state.branch ? `1/${allView.refs.size}` : allView.refs.size}</b> 条分支</span>`;
 }
 
 function highlight(text, q) {
@@ -198,17 +226,20 @@ function render() { renderGraph(); renderDetail(); }
 
 // webview 被隐藏后可能整体重建，把选中状态存回去
 const save = () => vscodeApi.setState({
-  selected: state.selected, showNoise: state.showNoise, query: state.query,
+  selected: state.selected, showNoise: state.showNoise, query: state.query, branch: state.branch,
 });
 
 document.getElementById("q").oninput = e => {
   state.query = e.target.value; save(); renderGraph();
 };
+document.getElementById("branch-filter").onchange = e => {
+  state.branch = e.target.value; state.selected = null; save(); render();
+};
 document.getElementById("f-noise").onchange = e => {
-  state.showNoise = e.target.checked; state.selected = null; save(); render();
+  state.showNoise = e.target.checked; state.selected = null; state.branch = ""; save(); render();
 };
 document.addEventListener("keydown", e => {
-  if (e.target.tagName === "INPUT" || !view) return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || !view) return;
   const i = view.order.indexOf(state.selected);
   if (e.key === "j" || e.key === "ArrowDown") {
     state.selected = view.order[Math.min(view.order.length - 1, i + 1)] || view.order[0];
@@ -233,7 +264,7 @@ window.addEventListener("message", ev => {
   const switching = prevId !== null && prevId !== nextId;
   state.session = msg.session;
 
-  if (switching) state.selected = null;
+  if (switching) { state.selected = null; state.branch = ""; }
   if (switching || !restored) {
     state.showNoise = msg.showNoise;          // 跟随配置默认值
     document.getElementById("f-noise").checked = state.showNoise;
@@ -256,6 +287,7 @@ window.addEventListener("message", ev => {
     state.selected = prev.selected ?? null;
     state.showNoise = Boolean(prev.showNoise);
     state.query = prev.query || "";
+    state.branch = typeof prev.branch === "string" ? prev.branch : "";
     document.getElementById("f-noise").checked = state.showNoise;
     document.getElementById("q").value = state.query;
   }

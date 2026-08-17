@@ -14,6 +14,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { contract, layout } = require("../media/layout");
 
 process.env.CLAUDE_CONFIG_DIR = path.resolve(__dirname, "fixtures");
 process.env.CODEX_HOME = path.resolve(__dirname, "fixtures/codex");
@@ -77,7 +78,7 @@ const html = calls.panels[0].webview.html
 --vscode-font-family:sans-serif;--vscode-font-size:13px;--vscode-editor-font-family:monospace;}
 </style>
 <script>
-let _state=${JSON.stringify({ selected: forkId, showNoise: false, query: "" })};
+let _state=${JSON.stringify({ selected: forkId, showNoise: false, query: "", branch: "" })};
 window.acquireVsCodeApi=()=>({
   postMessage(m){
     if(m.type==='forkTurn') document.documentElement.dataset.forkTurn=m.turnId;
@@ -94,6 +95,30 @@ window.addEventListener('DOMContentLoaded',()=>{
       document.querySelector('.sib[data-go]')?.click();
       document.getElementById('resume-turn')?.click();
       document.querySelector('[data-id="${forkId}"]')?.click();
+
+      const picker=document.getElementById('branch-filter');
+      const tip=[...picker.options].find(o=>o.textContent.startsWith('tip/'));
+      document.documentElement.dataset.branchOptions=String(picker.options.length);
+      document.documentElement.dataset.allTurns=String(document.querySelectorAll('.row').length);
+      if(tip){
+        const contracted=contract(${JSON.stringify(payload.session.turns)},
+          t=>t.kind==='prompt'||t.kind==='compact');
+        const expected=filterBranch(contracted,tip.value).map(t=>t.id);
+        picker.value=tip.value;
+        picker.dispatchEvent(new Event('change'));
+        const actual=[...document.querySelectorAll('.row')].map(n=>n.dataset.id);
+        document.documentElement.dataset.filteredTurns=String(actual.length);
+        document.documentElement.dataset.expectedFilteredTurns=String(expected.length);
+        document.documentElement.dataset.filteredExact=String(
+          actual.length===expected.length&&actual.every((id,i)=>id===expected[i]));
+        document.documentElement.dataset.filteredRef=
+          document.querySelector('.ref.tip')?.textContent||'';
+        document.documentElement.dataset.savedBranch=_state.branch||'';
+        picker.value='';
+        picker.dispatchEvent(new Event('change'));
+        document.documentElement.dataset.restoredTurns=String(document.querySelectorAll('.row').length);
+        document.querySelector('[data-id="${forkId}"]')?.click();
+      }
     },50);
   },0);
 });
@@ -116,6 +141,8 @@ const check = (name, fn) => {
 };
 
 const shownTurns = payload.session.turns.filter(t => visible.has(t.id)).length;
+const layoutBranchCount = turns => layout(contract(turns,
+  t => t.kind === "prompt" || t.kind === "compact")).refs.size;
 
 check("画出了全部可见轮次", () => {
   const rows = (dom.match(/class="row kind-/g) || []).length;
@@ -135,6 +162,27 @@ check("用到了多条泳道的颜色", () => {
 check("HEAD 与 tip 标签都渲染了", () => {
   assert.ok(dom.includes(">HEAD<"), "缺少 HEAD 标签");
   assert.ok(/>tip\/\d+</.test(dom), "缺少 tip 标签");
+});
+
+check("分支下拉框列出全部分支并保留筛选状态", () => {
+  const options = Number(dom.match(/data-branch-options="(\d+)"/)?.[1]);
+  assert.strictEqual(options, layoutBranchCount(payload.session.turns) + 1,
+    "下拉框应包含“全部分支”和每个叶子分支");
+  assert.ok(/data-saved-branch="[^"]+"/.test(dom), "选择的 tip 没有保存到 webview 状态");
+});
+
+check("选择 tip 后只保留该分支的完整祖先链", () => {
+  assert.ok(dom.includes('data-filtered-exact="true"'), "筛选后的节点不是所选 tip 的精确祖先链");
+  const filtered = Number(dom.match(/data-filtered-turns="(\d+)"/)?.[1]);
+  const all = Number(dom.match(/data-all-turns="(\d+)"/)?.[1]);
+  assert.ok(filtered > 0 && filtered < all, `筛选没有缩小视图：${filtered}/${all}`);
+  assert.ok(dom.includes('data-filtered-ref="tip/'), "非 HEAD 分支的原始 tip 标签没有保留");
+});
+
+check("清除分支筛选会恢复完整图", () => {
+  const restored = Number(dom.match(/data-restored-turns="(\d+)"/)?.[1]);
+  const all = Number(dom.match(/data-all-turns="(\d+)"/)?.[1]);
+  assert.strictEqual(restored, all);
 });
 
 // 这条是回归测试：webview 被 VS Code 重建后扩展会重投数据，

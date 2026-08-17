@@ -2,7 +2,7 @@
   "name": "claude-conversation-graph",
   "displayName": "Claude / Codex 对话分支图",
   "description": "把 Claude Code 与 Codex 对话历史渲染成 git-graph 风格的分支图，支持创建分支和安全删除整个对话。",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "publisher": "adscaboli",
   "license": "MIT",
   "repository": {
@@ -203,6 +203,6 @@
     }
   },
   "scripts": {
-    "test": "node test/parser.js && node test/conversation-delete.js && node test/codex-app-server.js && node test/smoke.js && node test/webview.js"
+    "test": "node test/parser.js && node test/branch-filter.js && node test/conversation-delete.js && node test/codex-app-server.js && node test/smoke.js && node test/webview.js"
   }
 }
