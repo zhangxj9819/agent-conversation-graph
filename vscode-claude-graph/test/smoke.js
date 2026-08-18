@@ -21,7 +21,7 @@ fs.cpSync(path.resolve(__dirname, "fixtures"), testConfigDir, { recursive: true 
 process.env.CLAUDE_CONFIG_DIR = testConfigDir;
 process.env.CODEX_HOME = path.join(testConfigDir, "codex");
 
-const { vscode, calls, config } = require("./mock-vscode");
+const { vscode, calls, config, workspaceState } = require("./mock-vscode");
 
 // 把 require("vscode") 换成替身
 const origLoad = Module._load;
@@ -60,6 +60,7 @@ check("Codex app-server fork 缺少 turn_context 时仍保留用户消息", () =
 const context = {
   subscriptions: [],
   extensionUri: vscode.Uri.file(path.resolve(__dirname, "..")),
+  workspaceState,
 };
 ext.activate(context);
 
@@ -67,22 +68,25 @@ check("activate 注册了 Claude/Codex 各自的命令", () => {
   assert.deepStrictEqual([...calls.registeredCommands.keys()].sort(), [
     "claudeGraph.deleteConversation", "claudeGraph.open", "claudeGraph.openCurrent",
     "claudeGraph.refresh", "claudeGraph.revealFile", "codexGraph.openCurrent",
-    "codexGraph.refresh",
+    "codexGraph.refresh", "conversationProjects.assign", "conversationProjects.create",
+    "conversationProjects.delete", "conversationProjects.rename",
+    "conversationProjects.unassign",
   ]);
 });
 
-check("一个活动栏容器内注册 Claude/Codex 两个独立 View", () => {
+check("一个活动栏容器内注册两个会话 View 和统一子项目 View", () => {
   const manifest = require("../package.json");
   assert.deepStrictEqual(
     manifest.contributes.viewsContainers.activitybar.map(item => item.id),
     ["claudeGraph"]);
   assert.deepStrictEqual(
     manifest.contributes.views.claudeGraph.map(view => view.id),
-    ["claudeGraph.sessions", "codexGraph.sessions"]);
+    ["claudeGraph.sessions", "codexGraph.sessions", "conversationProjects.items"]);
   assert.strictEqual(manifest.contributes.views.codexGraph, undefined,
     "Codex 被错误注册成第二个活动栏容器");
   assert.ok(calls.treeProviders.has("claudeGraph.sessions"));
   assert.ok(calls.treeProviders.has("codexGraph.sessions"));
+  assert.ok(calls.treeProviders.has("conversationProjects.items"));
 });
 
 check("Claude/Codex 会话条目都提供删除入口", () => {
@@ -93,9 +97,23 @@ check("Claude/Codex 会话条目都提供删除入口", () => {
   assert.strictEqual(command.icon, "$(trash)");
   const menus = manifest.contributes.menus["view/item/context"]
     .filter(item => item.command === "claudeGraph.deleteConversation");
-  assert.strictEqual(menus.length, 2);
+  assert.strictEqual(menus.length, 3);
   assert.ok(menus.some(item => item.when.includes("claudeGraph.sessions")));
   assert.ok(menus.some(item => item.when.includes("codexGraph.sessions")));
+  assert.ok(menus.some(item => item.when.includes("conversationProjects.items")));
+});
+
+check("子项目清单声明了增删改、归入和移出命令", () => {
+  const manifest = require("../package.json");
+  const ids = new Set(manifest.contributes.commands.map(item => item.command));
+  for (const id of ["conversationProjects.create", "conversationProjects.rename",
+    "conversationProjects.delete", "conversationProjects.assign",
+    "conversationProjects.unassign"]) assert.ok(ids.has(id), `缺少命令 ${id}`);
+  const menus = manifest.contributes.menus["view/item/context"];
+  assert.ok(menus.some(item => item.command === "conversationProjects.assign" &&
+    item.when.includes("claudeGraph.sessions")));
+  assert.ok(menus.some(item => item.command === "conversationProjects.assign" &&
+    item.when.includes("codexGraph.sessions")));
 });
 
 check("同时监听 Claude 与 Codex 的 .jsonl", () => {
@@ -108,6 +126,7 @@ check("同时监听 Claude 与 Codex 的 .jsonl", () => {
 // ---- 树视图 ---------------------------------------------------------------
 const tree = calls.treeProviders.get("claudeGraph.sessions");
 const codexTree = calls.treeProviders.get("codexGraph.sessions");
+const projectTree = calls.treeProviders.get("conversationProjects.items");
 const projects = tree.getChildren();
 const codexProjects = codexTree.getChildren();
 
@@ -148,6 +167,18 @@ check("有分叉的会话用 git-branch 图标区分", () => {
   assert.ok(forked.every(s => s.iconPath.id === "git-branch"));
   assert.ok(sessions.filter(s => !s.description.includes("分叉"))
     .every(s => s.iconPath.id === "comment-discussion"));
+});
+
+check("统一子项目 View 初始把两种 provider 的对话列入未分类", () => {
+  const groups = projectTree.getChildren();
+  assert.strictEqual(groups.length, 1);
+  assert.strictEqual(groups[0].contextValue, "conversationUnassignedGroup");
+  assert.strictEqual(groups[0].description, "3 个对话");
+  const items = projectTree.getChildren(groups[0]);
+  assert.strictEqual(items.length, 3);
+  assert.ok(items.some(item => item.description.startsWith("Claude Code ·")));
+  assert.ok(items.some(item => item.description.startsWith("Codex ·")));
+  assert.ok(items.every(item => item.contextValue === "conversationUnassignedSession"));
 });
 
 // ---- 打开 webview ---------------------------------------------------------
@@ -282,6 +313,85 @@ const messagesBeforeDebounce = calls.messages.length;
 setTimeout(async () => {
   check("去抖窗口结束后完成刷新", () =>
     assert.ok(calls.messages.length > messagesBeforeDebounce, "刷新未发生"));
+
+  // ---- 插件内虚拟子项目 CRUD 与归类 --------------------------------------
+  const targetBeforeClassification = fs.readFileSync(targetFile, "utf8");
+  calls.inputBoxResponses.push("认证重构");
+  await calls.registeredCommands.get("conversationProjects.create")();
+  let subprojectGroups = projectTree.getChildren();
+  let authProject = subprojectGroups.find(item =>
+    item.contextValue === "conversationSubproject");
+  check("可以创建工作区内的虚拟子项目", () => {
+    assert.ok(authProject);
+    assert.strictEqual(authProject.label, "认证重构");
+    assert.strictEqual(authProject.description, "0 个对话");
+    assert.ok(calls.workspaceStateUpdates.length > 0, "没有写入 workspaceState");
+  });
+
+  calls.quickPickResponses.push("认证重构");
+  await calls.registeredCommands.get("conversationProjects.assign")(targetItem);
+  subprojectGroups = projectTree.getChildren();
+  authProject = subprojectGroups.find(item =>
+    item.contextValue === "conversationSubproject");
+  let unassignedGroup = subprojectGroups.find(item =>
+    item.contextValue === "conversationUnassignedGroup");
+  let assignedItem = projectTree.getChildren(authProject)[0];
+  check("Claude 对话可归入子项目且 Codex/Claude 原列表保持不变", () => {
+    assert.ok(assignedItem);
+    assert.strictEqual(assignedItem._conversation.key, targetItem._conversation.key);
+    assert.strictEqual(assignedItem.contextValue, "conversationAssignedSession");
+    assert.strictEqual(projectTree.getChildren(unassignedGroup).length, 2);
+    assert.strictEqual(tree.getChildren(tree.getChildren()[0]).length, 2);
+    assert.strictEqual(codexTree.getChildren(codexTree.getChildren()[0]).length, 1);
+    assert.strictEqual(fs.readFileSync(targetFile, "utf8"), targetBeforeClassification,
+      "归类操作修改了原始 Claude JSONL");
+  });
+
+  await calls.registeredCommands.get("conversationProjects.unassign")(assignedItem);
+  check("对话可显式移回未分类", () => {
+    const groups = projectTree.getChildren();
+    const emptyProject = groups.find(item => item.contextValue === "conversationSubproject");
+    const unassigned = groups.find(item => item.contextValue === "conversationUnassignedGroup");
+    assert.strictEqual(projectTree.getChildren(emptyProject).length, 0);
+    assert.strictEqual(projectTree.getChildren(unassigned).length, 3);
+  });
+
+  calls.quickPickResponses.push("认证重构");
+  await calls.registeredCommands.get("conversationProjects.assign")(targetItem);
+  authProject = projectTree.getChildren().find(item =>
+    item.contextValue === "conversationSubproject");
+
+  calls.inputBoxResponses.push("身份认证");
+  await calls.registeredCommands.get("conversationProjects.rename")(authProject);
+  subprojectGroups = projectTree.getChildren();
+  authProject = subprojectGroups.find(item =>
+    item.contextValue === "conversationSubproject");
+  check("重命名子项目后保留其中的对话", () => {
+    assert.strictEqual(authProject.label, "身份认证");
+    assert.strictEqual(authProject.description, "1 个对话");
+    assert.strictEqual(projectTree.getChildren(authProject).length, 1);
+  });
+
+  calls.warningResponses.push(undefined);
+  await calls.registeredCommands.get("conversationProjects.delete")(authProject);
+  check("取消删除子项目会保留分类", () => {
+    const kept = projectTree.getChildren().find(item =>
+      item.contextValue === "conversationSubproject");
+    assert.ok(kept);
+    assert.strictEqual(projectTree.getChildren(kept).length, 1);
+  });
+
+  calls.warningResponses.push("删除子项目");
+  await calls.registeredCommands.get("conversationProjects.delete")(authProject);
+  check("删除子项目只把对话移回未分类且不修改原文件", () => {
+    const groups = projectTree.getChildren();
+    assert.ok(!groups.some(item => item.contextValue === "conversationSubproject"));
+    unassignedGroup = groups.find(item => item.contextValue === "conversationUnassignedGroup");
+    assert.strictEqual(projectTree.getChildren(unassignedGroup).length, 3);
+    assert.strictEqual(fs.readFileSync(targetFile, "utf8"), targetBeforeClassification);
+    const prompt = calls.warningMessages.at(-1);
+    assert.ok(prompt.args[0].detail.includes("不会删除、移动或修改"));
+  });
 
   // ---- 创建/切换 Claude 对话分支 ------------------------------------------
   const data = calls.messages.at(-1).session;

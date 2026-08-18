@@ -3,6 +3,14 @@
 All notable changes to the Claude / Codex Conversation Graph extension are
 documented in this file.
 
+## 0.6.0 - 2026-08-18
+
+- Add a unified virtual-subproject view for organizing Claude Code and Codex conversations.
+- Persist subprojects and conversation assignments in VS Code workspace state without moving or
+  modifying the original JSONL files.
+- Add create, rename, delete, assign, move, and unassign actions. Deleting a subproject safely
+  returns its conversations to the unassigned group.
+
 ## 0.5.0 - 2026-08-17
 
 - Add a branch filter to the VS Code graph and standalone HTML viewer. Selecting `HEAD` or a
@@ -49,7 +57,8 @@ documented in this file.
 - Keep one conversation entry per session lineage and preserve branch tips.
 - Limit the sidebar to the current VS Code workspace.
 
-[0.5.0]: https://github.com/zhangxj9819/agent-conversation-graph/compare/5228625...HEAD
+[0.6.0]: https://github.com/zhangxj9819/agent-conversation-graph/compare/2baa51c...HEAD
+[0.5.0]: https://github.com/zhangxj9819/agent-conversation-graph/compare/5228625...2baa51c
 [0.4.1]: https://github.com/zhangxj9819/agent-conversation-graph/compare/e173724...5228625
 [0.4.0]: https://github.com/zhangxj9819/agent-conversation-graph/compare/375251a...e173724
 [0.3.3]: https://github.com/zhangxj9819/agent-conversation-graph/compare/499e6b0...375251a

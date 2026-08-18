@@ -33,13 +33,13 @@ if (!chrome) {
 }
 
 // ---- 拿到插件真正生成的 webview HTML 与会话数据 ---------------------------
-const { vscode, calls } = require("./mock-vscode");
+const { vscode, calls, workspaceState } = require("./mock-vscode");
 const origLoad = Module._load;
 Module._load = function (r, p, m) { return r === "vscode" ? vscode : origLoad.call(this, r, p, m); };
 
 const extRoot = path.resolve(__dirname, "..");
 const ext = require("../extension.js");
-ext.activate({ subscriptions: [], extensionUri: vscode.Uri.file(extRoot) });
+ext.activate({ subscriptions: [], extensionUri: vscode.Uri.file(extRoot), workspaceState });
 
 const tree = calls.treeProviders.get("claudeGraph.sessions");
 const sessions = tree.getChildren().flatMap(p => tree.getChildren(p));

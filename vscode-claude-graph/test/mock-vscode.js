@@ -43,8 +43,11 @@ const calls = {
   terminals: [],
   inputBoxes: [],
   inputBoxResponses: [],
+  quickPicks: [],
+  quickPickResponses: [],
   warningMessages: [],
   warningResponses: [],
+  workspaceStateUpdates: [],
   deletedFiles: [],
   deleteErrors: new Map(),
 };
@@ -56,6 +59,18 @@ const config = {
   autoRefresh: true,
   claudeCommand: "claude",
   codexCommand: "codex",
+};
+
+const workspaceStateValues = new Map();
+const workspaceState = {
+  get(key, fallback) {
+    return workspaceStateValues.has(key) ? workspaceStateValues.get(key) : fallback;
+  },
+  update(key, value) {
+    workspaceStateValues.set(key, value);
+    calls.workspaceStateUpdates.push({ key, value });
+    return Promise.resolve();
+  },
 };
 
 const vscode = {
@@ -138,6 +153,14 @@ const vscode = {
       const value = calls.inputBoxResponses.length ? calls.inputBoxResponses.shift() : "";
       return Promise.resolve(value);
     },
+    showQuickPick(items, options) {
+      calls.quickPicks.push({ items, options });
+      const response = calls.quickPickResponses.length ? calls.quickPickResponses.shift() : undefined;
+      if (typeof response === "string") {
+        return Promise.resolve(items.find(item => item.label === response));
+      }
+      return Promise.resolve(response);
+    },
     showWarningMessage(m, ...args) {
       calls.executed.push(["warn", m]);
       calls.warningMessages.push({ message: m, args });
@@ -163,4 +186,4 @@ const vscode = {
   },
 };
 
-module.exports = { vscode, calls, config };
+module.exports = { vscode, calls, config, workspaceState };

@@ -1,8 +1,8 @@
 {
   "name": "claude-conversation-graph",
   "displayName": "Claude / Codex 对话分支图",
-  "description": "把 Claude Code 与 Codex 对话历史渲染成 git-graph 风格的分支图，支持创建分支和安全删除整个对话。",
-  "version": "0.5.0",
+  "description": "把 Claude Code 与 Codex 对话历史渲染成 git-graph 风格的分支图，并用插件内虚拟子项目分类管理。",
+  "version": "0.6.0",
   "publisher": "adscaboli",
   "license": "MIT",
   "repository": {
@@ -57,6 +57,11 @@
           "id": "codexGraph.sessions",
           "name": "Codex 会话",
           "icon": "media/codex-icon.svg"
+        },
+        {
+          "id": "conversationProjects.items",
+          "name": "会话子项目",
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -68,6 +73,10 @@
       {
         "view": "codexGraph.sessions",
         "contents": "当前工作区没有 Codex 对话记录。\n先在这个目录中启动 Codex 并进行对话。\n[重新扫描 Codex 会话](command:codexGraph.refresh)"
+      },
+      {
+        "view": "conversationProjects.items",
+        "contents": "尚无可分类的对话或会话子项目。\n[新建会话子项目](command:conversationProjects.create)"
       }
     ],
     "commands": [
@@ -112,6 +121,36 @@
         "title": "删除整个对话…",
         "category": "对话分支图",
         "icon": "$(trash)"
+      },
+      {
+        "command": "conversationProjects.create",
+        "title": "新建会话子项目…",
+        "category": "对话分支图",
+        "icon": "$(add)"
+      },
+      {
+        "command": "conversationProjects.rename",
+        "title": "重命名子项目…",
+        "category": "对话分支图",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "conversationProjects.delete",
+        "title": "删除子项目…",
+        "category": "对话分支图",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "conversationProjects.assign",
+        "title": "归入子项目…",
+        "category": "对话分支图",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "conversationProjects.unassign",
+        "title": "移出子项目",
+        "category": "对话分支图",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -124,6 +163,11 @@
         {
           "command": "codexGraph.refresh",
           "when": "view == codexGraph.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "conversationProjects.create",
+          "when": "view == conversationProjects.items",
           "group": "navigation"
         }
       ],
@@ -147,6 +191,51 @@
           "command": "claudeGraph.deleteConversation",
           "when": "view == codexGraph.sessions && viewItem == session",
           "group": "inline@2"
+        },
+        {
+          "command": "conversationProjects.assign",
+          "when": "view == claudeGraph.sessions && viewItem == session",
+          "group": "conversationProjects@1"
+        },
+        {
+          "command": "conversationProjects.assign",
+          "when": "view == codexGraph.sessions && viewItem == session",
+          "group": "conversationProjects@1"
+        },
+        {
+          "command": "conversationProjects.rename",
+          "when": "view == conversationProjects.items && viewItem == conversationSubproject",
+          "group": "inline@1"
+        },
+        {
+          "command": "conversationProjects.delete",
+          "when": "view == conversationProjects.items && viewItem == conversationSubproject",
+          "group": "inline@2"
+        },
+        {
+          "command": "conversationProjects.assign",
+          "when": "view == conversationProjects.items && viewItem == conversationAssignedSession",
+          "group": "conversationProjects@1"
+        },
+        {
+          "command": "conversationProjects.assign",
+          "when": "view == conversationProjects.items && viewItem == conversationUnassignedSession",
+          "group": "conversationProjects@1"
+        },
+        {
+          "command": "conversationProjects.unassign",
+          "when": "view == conversationProjects.items && viewItem == conversationAssignedSession",
+          "group": "conversationProjects@2"
+        },
+        {
+          "command": "claudeGraph.revealFile",
+          "when": "view == conversationProjects.items && (viewItem == conversationAssignedSession || viewItem == conversationUnassignedSession)",
+          "group": "inline@1"
+        },
+        {
+          "command": "claudeGraph.deleteConversation",
+          "when": "view == conversationProjects.items && (viewItem == conversationAssignedSession || viewItem == conversationUnassignedSession)",
+          "group": "inline@2"
         }
       ],
       "commandPalette": [
@@ -160,6 +249,22 @@
         },
         {
           "command": "claudeGraph.deleteConversation",
+          "when": "false"
+        },
+        {
+          "command": "conversationProjects.rename",
+          "when": "false"
+        },
+        {
+          "command": "conversationProjects.delete",
+          "when": "false"
+        },
+        {
+          "command": "conversationProjects.assign",
+          "when": "false"
+        },
+        {
+          "command": "conversationProjects.unassign",
           "when": "false"
         }
       ]
@@ -203,6 +308,6 @@
     }
   },
   "scripts": {
-    "test": "node test/parser.js && node test/branch-filter.js && node test/conversation-delete.js && node test/codex-app-server.js && node test/smoke.js && node test/webview.js"
+    "test": "node test/parser.js && node test/branch-filter.js && node test/conversation-delete.js && node test/codex-app-server.js && node test/subproject-store.js && node test/smoke.js && node test/webview.js"
   }
 }
